@@ -12,7 +12,7 @@ services:
   - type: web
     name: aether-api
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     dockerContext: ./apps/api
     dockerfilePath: ./apps/api/Dockerfile
@@ -91,7 +91,7 @@ services:
   - type: web
     name: aether-web
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     dockerContext: ./apps/web
     dockerfilePath: ./apps/web/Dockerfile
