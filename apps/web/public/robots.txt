@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /chat
+Disallow: /voice
+Disallow: /history
+Disallow: /memory
+Disallow: /settings
+Disallow: /studio

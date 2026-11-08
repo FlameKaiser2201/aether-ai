@@ -1,0 +1,54 @@
+# dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# builds
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+apps/web/.vercel/
+apps/web/.open-next/
+.wrangler/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+!.env.test
+apps/api/.env
+apps/web/.env.local
+apps/web/.env.production.local
+*.pem
+*.key
+
+# runtime data
+data/
+storage/
+*.db
+*.db-journal
+*.sqlite3
+logs/
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/
+htmlcov/
+playwright-report/
+test-results/
+
+# generated
+apps/api/alembic/versions/__pycache__/
