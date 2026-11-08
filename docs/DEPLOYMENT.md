@@ -97,10 +97,10 @@ The repository includes [`render.yaml`](../render.yaml) for a Render Blueprint.
    - `aether-web` (Docker, `apps/web/Dockerfile`, context `apps/web`)
 4. Set the prompted secrets (`sync: false`) in the dashboard: provider keys,
    `TAVILY_API_KEY`, voice keys, and optionally Supabase.
-5. Update the hard-coded service hostnames in `render.yaml` if your service
-   names or regions differ:
-   - API `APP_URL`, `API_URL`, `CORS_ORIGINS`, `TRUSTED_HOSTS`
-   - Web `AUTH_URL`, `NEXTAUTH_URL`, `API_URL`
+5. The Blueprint resolves `APP_URL`, `API_URL`, `CORS_ORIGINS`, `TRUSTED_HOSTS`,
+   `AUTH_URL` and `NEXTAUTH_URL` from each service's `RENDER_EXTERNAL_URL`, so
+   suffixed `onrender.com` subdomains work without manual edits. If you rename
+   a service in `render.yaml`, update the matching `fromService` names too.
 
 The API normalizes Render's `postgresql://` connection string to
 `postgresql+asyncpg://` automatically. The Docker command applies Alembic

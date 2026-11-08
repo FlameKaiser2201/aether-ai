@@ -47,14 +47,28 @@ services:
         generateValue: true
       - key: INTERNAL_API_SECRET
         generateValue: true
+      # Resolve public URLs from the services themselves so the Blueprint keeps
+      # working if Render assigns a suffixed onrender.com subdomain.
       - key: APP_URL
-        value: https://aether-web.onrender.com
+        fromService:
+          type: web
+          name: aether-web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: API_URL
-        value: https://aether-api.onrender.com
+        fromService:
+          type: web
+          name: aether-api
+          envVarKey: RENDER_EXTERNAL_URL
       - key: CORS_ORIGINS
-        value: https://aether-web.onrender.com
+        fromService:
+          type: web
+          name: aether-web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: TRUSTED_HOSTS
-        value: aether-api.onrender.com
+        fromService:
+          type: web
+          name: aether-api
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: OPENAI_API_KEY
         sync: false
       - key: DEEPSEEK_API_KEY
@@ -91,8 +105,17 @@ services:
       - key: AUTH_SECRET
         generateValue: true
       - key: AUTH_URL
-        value: https://aether-web.onrender.com
+        fromService:
+          type: web
+          name: aether-web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: NEXTAUTH_URL
-        value: https://aether-web.onrender.com
+        fromService:
+          type: web
+          name: aether-web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: API_URL
-        value: https://aether-api.onrender.com
+        fromService:
+          type: web
+          name: aether-api
+          envVarKey: RENDER_EXTERNAL_URL
