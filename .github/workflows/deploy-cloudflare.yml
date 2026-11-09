@@ -1,0 +1,59 @@
+name: Deploy web to Cloudflare
+
+# Manual deploy path so the Worker can be shipped from Linux without local
+# Wrangler auth. Add these repository secrets first:
+#   CLOUDFLARE_API_TOKEN   — Workers Scripts: Edit
+#   CLOUDFLARE_ACCOUNT_ID  — Cloudflare dashboard → Workers & Pages overview
+#   AUTH_SECRET            — 48-byte random
+#   API_URL                — Northflank public origin
+#   AUTH_URL               — https://aether-web.<subdomain>.workers.dev
+#   NEXTAUTH_URL           — same as AUTH_URL
+#
+# The Worker is deployed once before secrets are written, which creates it if
+# it does not exist yet. Worker secrets persist across later deployments.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy aether-web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+      API_URL: ${{ secrets.API_URL }}
+      AUTH_URL: ${{ secrets.AUTH_URL }}
+      NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build OpenNext bundle
+        run: npm run build:cloudflare
+      - name: Deploy Worker
+        run: npx wrangler deploy
+      - name: Sync Worker secrets
+        run: |
+          set -euo pipefail
+          printf '%s' "$AUTH_SECRET" | npx wrangler secret put AUTH_SECRET
+          printf '%s' "$API_URL" | npx wrangler secret put API_URL
+          printf '%s' "$AUTH_URL" | npx wrangler secret put AUTH_URL
+          printf '%s' "$NEXTAUTH_URL" | npx wrangler secret put NEXTAUTH_URL

@@ -64,6 +64,8 @@ jobs:
         run: npm run typecheck
       - name: Build
         run: npm run build
+      - name: OpenNext Cloudflare build
+        run: npm run build:cloudflare
 
   containers:
     name: Containers · build images
