@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 
@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core.config import settings  # noqa: E402
-from app.core.database import Base  # noqa: E402
+from app.core.database import Base, _prepare_engine  # noqa: E402
 from app.models import entities  # noqa: E402,F401  (register all models)
 
 config = context.config
@@ -61,13 +61,13 @@ def _run_sync_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    url, engine_kwargs = _prepare_engine(settings.database_url)
+    # Alembic uses NullPool, which does not accept the app's pool sizing
+    # arguments. The SSL translation in _prepare_engine is still required:
+    # asyncpg.connect() accepts ``ssl`` but not libpq's ``sslmode`` keyword.
+    for key in ("pool_size", "max_overflow", "pool_pre_ping", "pool_recycle"):
+        engine_kwargs.pop(key, None)
+    connectable = create_async_engine(url, poolclass=pool.NullPool, **engine_kwargs)
     async with connectable.connect() as connection:
         await connection.run_sync(_run_sync_migrations)
     await connectable.dispose()
