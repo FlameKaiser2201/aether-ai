@@ -194,9 +194,9 @@ systems, and keep provider keys scoped and spend-limited.
   `AUTH_SECRET` to its own server runtime; backend tokens stay in the encrypted
   session cookie.
 - Never prefix provider keys with `NEXT_PUBLIC_`.
-- Use the platform's secret manager (Render environment groups, Railway
-  variables, Vercel encrypted env, Cloudflare `wrangler secret`, Docker secrets
-  or a vault).
+- Use the platform's secret manager (Northflank secret variables, Cloudflare
+  `wrangler secret`, Supabase project secrets, Railway variables, Vercel
+  encrypted env, Docker secrets or a vault).
 - Rotate JWT, Auth.js and provider secrets on a schedule. Rotating JWT secrets
   invalidates existing backend tokens; rotating `AUTH_SECRET` invalidates all
   web sessions.

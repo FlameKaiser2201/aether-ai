@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Railway builds from the repository root. Render and Compose use
+# Railway builds from the repository root. Compose and Northflank use
 # apps/api/Dockerfile with the apps/api directory as context.
 FROM python:3.12-slim AS runtime
 

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from sqlalchemy import event, text
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
@@ -18,26 +19,60 @@ class Base(DeclarativeBase):
     pass
 
 
-def _prepare_sqlite(url: str) -> dict:
+def _prepare_engine(url: str) -> tuple[str | URL, dict]:
+    """Build engine arguments, translating libpq SSL query parameters.
+
+    Managed Postgres providers (Supabase, Neon, etc.) publish URLs such as
+    ``postgresql://...?sslmode=require``. asyncpg accepts ``ssl=`` as a connect
+    argument but not the libpq ``sslmode=`` keyword, so move it into
+    ``connect_args`` and strip it from the URL.
+    """
     if url.startswith("sqlite"):
         raw = url.split("///", 1)[-1]
         if raw and raw != ":memory:":
             Path(raw).parent.mkdir(parents=True, exist_ok=True)
-        return {"connect_args": {"check_same_thread": False}}
-    return {
+        return url, {"connect_args": {"check_same_thread": False}}
+
+    parsed = make_url(url)
+    query = dict(parsed.query)
+    connect_args: dict[str, object] = {}
+
+    sslmode = query.pop("sslmode", None)
+    if sslmode is not None:
+        connect_args["ssl"] = sslmode
+    ssl_value = query.pop("ssl", None)
+    if ssl_value is not None:
+        normalized = ssl_value.lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            connect_args["ssl"] = "require"
+        elif normalized in {"0", "false", "no", "off"}:
+            connect_args["ssl"] = "disable"
+        else:
+            connect_args["ssl"] = ssl_value
+
+    if query != dict(parsed.query):
+        parsed = parsed.set(query=query)
+
+    kwargs: dict = {
         "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
         "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
         "pool_pre_ping": True,
         "pool_recycle": 1800,
     }
+    if connect_args:
+        kwargs["connect_args"] = connect_args
+    return parsed, kwargs
 
 
 _is_sqlite = settings.database_url.startswith("sqlite")
-_engine_kwargs = _prepare_sqlite(settings.database_url)
+_engine_url, _engine_kwargs = _prepare_engine(settings.database_url)
 if settings.environment == "test" and not _is_sqlite:
+    _test_connect_args = _engine_kwargs.get("connect_args")
     _engine_kwargs = {"poolclass": NullPool}
+    if _test_connect_args:
+        _engine_kwargs["connect_args"] = _test_connect_args
 
-engine = create_async_engine(settings.database_url, echo=False, **_engine_kwargs)
+engine = create_async_engine(_engine_url, echo=False, **_engine_kwargs)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

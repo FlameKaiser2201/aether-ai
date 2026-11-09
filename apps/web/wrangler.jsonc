@@ -14,6 +14,8 @@
   "observability": {
     "enabled": true
   },
+  // Runtime secrets are set with `wrangler secret put` and are never committed:
+  //   AUTH_SECRET, API_URL, AUTH_URL, NEXTAUTH_URL
   "vars": {
     "NODE_ENV": "production"
   }
