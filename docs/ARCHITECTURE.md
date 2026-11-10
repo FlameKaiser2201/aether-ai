@@ -11,7 +11,7 @@ This document is the source of truth for the system design. It is intentionally 
 
 1. **Honest intelligence** — AETHER never pretends to perform an action it cannot perform. Capability guardrails detect impossible or unsafe requests and explain the limitation with a concrete alternative.
 2. **Voice-first, text-native** — every capability is available in text; voice is a low-friction layer on top of the same streaming chat pipeline.
-3. **Provider independence** — one `ChatProvider` contract supports OpenAI-compatible APIs (OpenAI, DeepSeek, Groq, OpenRouter, Together, Mistral, custom gateways), native Ollama, and an offline demo provider.
+3. **Provider independence** — one `ChatProvider` contract supports OpenAI-compatible APIs (OpenRouter, OpenAI, DeepSeek, Groq, Together, Mistral, custom gateways), native Ollama, and an offline demo provider. Providers are tried in priority order with automatic cross-provider fallback.
 4. **Routing, not a single model** — lightweight models handle simple turns, coding models handle code, reasoning models handle architecture/interview work.
 5. **Memory with provenance** — short-term context (rolling summary + recent turns) and long-term memory (facts, preferences, goals, projects) are separate, inspectable and deletable.
 6. **Secure by construction** — server-only secrets, JWT rotation, origin checks, rate limits, SSRF guards, upload validation, prompt-injection delimiting, strict CSP.
@@ -212,15 +212,23 @@ This is a deterministic guard around probabilistic generation — the system rep
 | `study` | notes, quiz, flashcards, explain, teach, exam, revision | `balanced` |
 | `research` | web/search/latest/news/sources | `balanced` + web tool |
 | `voice` | voice mode, short conversational turn | `fast` |
-| `general` | everything else | `fast` |
+| `general` | greetings and small talk | `fast` |
+| `general` | normal questions and requests | `balanced` |
 
 Provider preference is configurable per deployment:
 
-- `quality` (default): OpenAI → DeepSeek → Groq/OpenRouter → Ollama → demo
-- `cost`: DeepSeek → OpenAI mini → Groq → Ollama → demo
-- `local`: Ollama → any cloud → demo
+- `quality` (default): OpenRouter → OpenAI → DeepSeek → Groq → custom → Ollama
+- `cost`: DeepSeek → Groq → OpenAI → OpenRouter → custom → Ollama
+- `local`: Ollama → DeepSeek → Groq → OpenAI → OpenRouter → custom
 
-Each provider exposes its own tier→model map, so routing is deterministic, observable (`meta` event) and testable. Explicit user mode (`mode: "coding"`) overrides classification.
+`PROVIDER_PRIORITY` overrides the quality order. The registry returns a ranked
+candidate list, and `app/ai/execution.py` walks it at runtime: a provider error,
+timeout, rate limit or empty completion moves to the next candidate. Streaming
+falls back only before the first text token; after that the partial answer is
+kept. Each provider exposes its own tier→model map, so routing is deterministic,
+observable (`meta` event) and testable. Explicit user mode (`mode: "coding"`)
+overrides classification. Demo is included only when no real provider exists,
+even if `DEMO_MODE=true`.
 
 ---
 

@@ -1,4 +1,10 @@
-"""Provider registry, availability reporting and deterministic routing."""
+"""Provider registry, availability reporting and deterministic routing.
+
+Quality order is OpenRouter -> OpenAI -> DeepSeek -> Groq by default. The
+router returns a ranked candidate list so a failed provider can be replaced at
+runtime without re-running classification. Demo is only present when no real
+provider is configured.
+"""
 
 from __future__ import annotations
 
@@ -14,10 +20,19 @@ from app.core.config import settings
 
 logger = logging.getLogger("aether.registry")
 
+DEFAULT_PROVIDER_PRIORITY = [
+    "openrouter",
+    "openai",
+    "deepseek",
+    "groq",
+    "custom",
+    "ollama",
+]
+
 STRATEGY_ORDER = {
-    "quality": ["openai", "deepseek", "groq", "openrouter", "custom", "ollama", "demo"],
-    "cost": ["deepseek", "groq", "openai", "openrouter", "custom", "ollama", "demo"],
-    "local": ["ollama", "deepseek", "openai", "groq", "openrouter", "custom", "demo"],
+    "quality": DEFAULT_PROVIDER_PRIORITY,
+    "cost": ["deepseek", "groq", "openai", "openrouter", "custom", "ollama"],
+    "local": ["ollama", "deepseek", "groq", "openai", "openrouter", "custom"],
 }
 
 TIER_FALLBACKS = {
@@ -28,6 +43,8 @@ TIER_FALLBACKS = {
     "vision": ["vision", "balanced", "fast"],
 }
 
+MAX_CANDIDATES = 12
+
 
 class ModelRegistry:
     def __init__(self) -> None:
@@ -35,6 +52,23 @@ class ModelRegistry:
         self._build()
 
     def _build(self) -> None:
+        # Construction order follows the quality priority so availability and
+        # catalog output are stable and easy to audit.
+        if settings.openrouter_api_key:
+            self.providers["openrouter"] = OpenAICompatibleProvider(
+                provider_id="openrouter",
+                label="OpenRouter",
+                base_url=settings.openrouter_base_url,
+                api_key=settings.openrouter_api_key,
+                models={
+                    "fast": settings.openrouter_fast_model,
+                    "balanced": settings.openrouter_balanced_model,
+                    "reasoning": settings.openrouter_reasoning_model,
+                    "coding": settings.openrouter_coding_model,
+                    "vision": settings.openrouter_vision_model,
+                },
+                capabilities=ProviderCapabilities(vision=True),
+            )
         if settings.openai_api_key:
             self.providers["openai"] = OpenAICompatibleProvider(
                 provider_id="openai",
@@ -64,7 +98,9 @@ class ModelRegistry:
                     "balanced": settings.deepseek_balanced_model,
                     "reasoning": settings.deepseek_reasoning_model,
                     "coding": settings.deepseek_coding_model,
+                    "vision": settings.deepseek_vision_model,
                 },
+                capabilities=ProviderCapabilities(vision=True),
             )
         if settings.groq_api_key:
             self.providers["groq"] = OpenAICompatibleProvider(
@@ -79,22 +115,7 @@ class ModelRegistry:
                     "coding": settings.groq_coding_model,
                 },
             )
-        if settings.openrouter_api_key:
-            self.providers["openrouter"] = OpenAICompatibleProvider(
-                provider_id="openrouter",
-                label="OpenRouter",
-                base_url=settings.openrouter_base_url,
-                api_key=settings.openrouter_api_key,
-                models={
-                    "fast": settings.openrouter_fast_model,
-                    "balanced": settings.openrouter_balanced_model,
-                    "reasoning": settings.openrouter_reasoning_model,
-                    "coding": settings.openrouter_coding_model,
-                    "vision": settings.openrouter_balanced_model,
-                },
-                capabilities=ProviderCapabilities(vision=True),
-            )
-        if settings.custom_ai_api_key and settings.custom_ai_base_url:
+        if settings.custom_ai_api_key and settings.custom_ai_base_url and settings.custom_ai_model:
             self.providers["custom"] = OpenAICompatibleProvider(
                 provider_id="custom",
                 label="Custom OpenAI-compatible",
@@ -125,7 +146,98 @@ class ModelRegistry:
         return self.providers.get(provider_id)
 
     def order(self, strategy: str) -> list[str]:
-        return STRATEGY_ORDER.get(strategy, STRATEGY_ORDER["quality"])
+        """Return configured providers in routing order.
+
+        The quality order is user-configurable via PROVIDER_PRIORITY. Any
+        configured provider missing from that list is appended so it is never
+        silently ignored. Demo appears only when nothing real is configured.
+        """
+        base = (
+            settings.provider_priority_list
+            if strategy == "quality"
+            else STRATEGY_ORDER.get(strategy, settings.provider_priority_list)
+        )
+        ordered = [
+            provider_id
+            for provider_id in base
+            if provider_id in self.providers and provider_id != "demo"
+        ]
+        ordered.extend(
+            provider_id
+            for provider_id in self.providers
+            if provider_id not in ordered and provider_id != "demo"
+        )
+        if not ordered:
+            ordered.append("demo")
+        return ordered
+
+    def candidates(
+        self,
+        *,
+        task_type: str,
+        tier: str,
+        strategy: str | None = None,
+        preferred_provider: str | None = None,
+        require_vision: bool = False,
+    ) -> list[RouteDecision]:
+        """Rank every viable provider/model pair for runtime fallback.
+
+        One model per provider is tried first, in priority order, so a broken
+        provider is skipped quickly. Extra tiers for the same provider follow
+        as deeper retries.
+        """
+        strategy = strategy or settings.routing_strategy
+        if not self.has_real_provider:
+            return [self._demo_decision(task_type, tier)]
+
+        ordered = self.order(strategy)
+        if preferred_provider:
+            preferred = preferred_provider.lower()
+            if preferred in ordered:
+                ordered = [preferred, *[pid for pid in ordered if pid != preferred]]
+
+        vision_available = any(
+            self.providers[provider_id].capabilities.vision for provider_id in ordered
+        )
+        primary: list[RouteDecision] = []
+        secondary: list[RouteDecision] = []
+        for provider_id in ordered:
+            provider = self.providers[provider_id]
+            if require_vision and vision_available and not provider.capabilities.vision:
+                continue
+            seen_models: set[str] = set()
+            provider_decisions: list[RouteDecision] = []
+            for candidate_tier in TIER_FALLBACKS.get(tier, ["balanced", "fast"]):
+                model = provider.model_for(candidate_tier)
+                if not model or model in seen_models:
+                    continue
+                seen_models.add(model)
+                reason = (
+                    f"{task_type} task → {provider.label}/{model} "
+                    f"({strategy} strategy)"
+                )
+                if candidate_tier != tier:
+                    reason += f"; {tier} unavailable, using {candidate_tier}"
+                if require_vision and not provider.capabilities.vision:
+                    reason += "; no vision model configured"
+                provider_decisions.append(
+                    RouteDecision(
+                        provider=provider,
+                        model=model,
+                        tier=candidate_tier,
+                        task_type=task_type,
+                        reason=reason,
+                        demo=provider.demo,
+                    )
+                )
+            if provider_decisions:
+                primary.append(provider_decisions[0])
+                secondary.extend(provider_decisions[1:])
+
+        ranked = (primary + secondary)[:MAX_CANDIDATES]
+        if ranked:
+            return ranked
+        return [self._demo_decision(task_type, tier)]
 
     def route(
         self,
@@ -136,51 +248,25 @@ class ModelRegistry:
         preferred_provider: str | None = None,
         require_vision: bool = False,
     ) -> RouteDecision:
-        strategy = strategy or settings.routing_strategy
-        if settings.demo_mode:
-            provider = self.providers["demo"]
-            return RouteDecision(
-                provider=provider,
-                model="demo-local",
-                tier=tier,
-                task_type=task_type,
-                reason="DEMO_MODE is enabled",
-                demo=True,
-            )
-
-        candidates: list[str] = []
-        if preferred_provider and preferred_provider in self.providers:
-            candidates.append(preferred_provider)
-        candidates.extend(self.order(strategy))
-
-        for provider_id in candidates:
-            provider = self.providers.get(provider_id)
-            if provider is None:
-                continue
-            if require_vision and not provider.capabilities.vision:
-                continue
-            for candidate_tier in TIER_FALLBACKS.get(tier, ["balanced", "fast"]):
-                model = provider.model_for(candidate_tier)
-                if model:
-                    reason = f"{task_type} task → {provider.label}/{model} ({strategy} strategy)"
-                    if candidate_tier != tier:
-                        reason += f"; {tier} unavailable, using {candidate_tier}"
-                    return RouteDecision(
-                        provider=provider,
-                        model=model,
-                        tier=candidate_tier,
-                        task_type=task_type,
-                        reason=reason,
-                        demo=provider.demo,
-                    )
-
-        provider = self.providers["demo"]
-        return RouteDecision(
-            provider=provider,
-            model="demo-local",
-            tier="fast",
+        return self.candidates(
             task_type=task_type,
-            reason="No model provider configured; using offline demo engine",
+            tier=tier,
+            strategy=strategy,
+            preferred_provider=preferred_provider,
+            require_vision=require_vision,
+        )[0]
+
+    def _demo_decision(self, task_type: str, tier: str) -> RouteDecision:
+        if settings.demo_mode:
+            reason = "DEMO_MODE is enabled and no model provider is configured"
+        else:
+            reason = "No model provider configured; using the offline demo engine"
+        return RouteDecision(
+            provider=self.providers["demo"],
+            model="demo-local",
+            tier=tier,
+            task_type=task_type,
+            reason=reason,
             demo=True,
         )
 
@@ -208,11 +294,25 @@ class ModelRegistry:
 
     @property
     def has_real_provider(self) -> bool:
-        return any(not p.demo for p in self.providers.values())
+        return any(not provider.demo for provider in self.providers.values())
+
+    @property
+    def real_provider_ids(self) -> list[str]:
+        return [
+            provider_id
+            for provider_id in self.order("quality")
+            if provider_id in self.providers and not self.providers[provider_id].demo
+        ]
 
     def availability(self) -> dict[str, dict[str, Any]]:
+        provider_ids = list(self.order("quality"))
+        if "demo" in self.providers and "demo" not in provider_ids:
+            provider_ids.append("demo")
         result: dict[str, dict[str, Any]] = {}
-        for provider_id, provider in self.providers.items():
+        for provider_id in provider_ids:
+            provider = self.providers.get(provider_id)
+            if provider is None:
+                continue
             result[provider_id] = {
                 "chat": True,
                 "streaming": provider.capabilities.streaming,

@@ -17,6 +17,8 @@ def test_classifier_routes_common_tasks():
     assert classify(ClassificationInput(message="mock interview for a backend role")).task_type == "interview"
     assert classify(ClassificationInput(message="latest news about AI regulation")).task_type == "research"
     assert classify(ClassificationInput(message="write a system design for a URL shortener")).task_type == "reasoning"
+    assert classify(ClassificationInput(message="Tell me about AI")).tier == "balanced"
+    assert classify(ClassificationInput(message="hello")).tier == "fast"
 
 
 def test_chat_persists_conversation_and_returns_meta(client, auth_headers):

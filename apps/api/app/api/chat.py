@@ -97,7 +97,11 @@ async def chat(payload: ChatRequest, user: CurrentUser, db: DbSession) -> ChatRe
             errors[0].get("message", "Chat failed"),
             502,
         )
-    meta_event = next((data for event, data in events if event == "meta"), {})
+    # A fallback emits a second meta event. The last one is the provider that
+    # actually produced the answer.
+    meta_event = next(
+        (data for event, data in reversed(events) if event == "meta"), {}
+    )
     done_event = next((data for event, data in events if event == "done"), {})
     citations_event = next((data for event, data in events if event == "citations"), {})
     validation_event = next((data for event, data in events if event == "validation"), {})

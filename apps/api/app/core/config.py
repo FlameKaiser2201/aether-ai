@@ -63,13 +63,17 @@ class Settings(BaseSettings):
     login_lockout_seconds: int = 900
 
     # --- AI providers (OpenAI-compatible) ---
+    # Priority is OpenRouter -> OpenAI -> DeepSeek -> Groq. Override with
+    # PROVIDER_PRIORITY, e.g. "openai,openrouter,deepseek,groq".
+    provider_priority: str = "openrouter,openai,deepseek,groq,custom,ollama"
+
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_fast_model: str = "gpt-4.1-mini"
-    openai_balanced_model: str = "gpt-4.1-mini"
+    openai_balanced_model: str = "gpt-4.1"
     openai_reasoning_model: str = "gpt-4.1"
     openai_coding_model: str = "gpt-4.1"
-    openai_vision_model: str = "gpt-4.1-mini"
+    openai_vision_model: str = "gpt-4.1"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_stt_model: str = "whisper-1"
     openai_tts_model: str = "gpt-4o-mini-tts"
@@ -77,24 +81,26 @@ class Settings(BaseSettings):
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
-    deepseek_fast_model: str = "deepseek-chat"
-    deepseek_balanced_model: str = "deepseek-chat"
-    deepseek_reasoning_model: str = "deepseek-reasoner"
-    deepseek_coding_model: str = "deepseek-chat"
+    deepseek_fast_model: str = "deepseek-flash"
+    deepseek_balanced_model: str = "deepseek-flash"
+    deepseek_reasoning_model: str = "deepseek-v4-pro"
+    deepseek_coding_model: str = "deepseek-v4-pro"
+    deepseek_vision_model: str = "deepseek-flash"
 
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_fast_model: str = "llama-3.3-70b-versatile"
-    groq_balanced_model: str = "llama-3.3-70b-versatile"
-    groq_reasoning_model: str = "deepseek-r1-distill-llama-70b"
-    groq_coding_model: str = "llama-3.3-70b-versatile"
+    groq_fast_model: str = "openai/gpt-oss-20b"
+    groq_balanced_model: str = "openai/gpt-oss-120b"
+    groq_reasoning_model: str = "openai/gpt-oss-120b"
+    groq_coding_model: str = "openai/gpt-oss-120b"
 
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_fast_model: str = "openai/gpt-4.1-mini"
-    openrouter_balanced_model: str = "openai/gpt-4.1-mini"
-    openrouter_reasoning_model: str = "anthropic/claude-sonnet-4"
-    openrouter_coding_model: str = "anthropic/claude-sonnet-4"
+    openrouter_fast_model: str = "google/gemini-3.8-flash"
+    openrouter_balanced_model: str = "anthropic/claude-sonnet-5.5"
+    openrouter_reasoning_model: str = "anthropic/claude-sonnet-5.5"
+    openrouter_coding_model: str = "anthropic/claude-sonnet-5.5"
+    openrouter_vision_model: str = "anthropic/claude-sonnet-5.5"
 
     custom_ai_api_key: str = ""
     custom_ai_base_url: str = ""
@@ -181,10 +187,16 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     @property
-    def effective_demo_mode(self) -> bool:
-        if self.demo_mode:
-            return True
-        return not any(
+    def provider_priority_list(self) -> list[str]:
+        return [
+            provider.strip().lower()
+            for provider in self.provider_priority.split(",")
+            if provider.strip()
+        ]
+
+    @property
+    def has_real_provider_key(self) -> bool:
+        return any(
             [
                 self.openai_api_key,
                 self.deepseek_api_key,
@@ -194,6 +206,15 @@ class Settings(BaseSettings):
                 self.ollama_enabled,
             ]
         )
+
+    @property
+    def effective_demo_mode(self) -> bool:
+        """Demo is a last resort, never a choice when a provider is configured.
+
+        ``DEMO_MODE=true`` cannot override a real key: if any provider is
+        configured, requests are sent to a real model.
+        """
+        return not self.has_real_provider_key
 
     @property
     def storage_uses_supabase(self) -> bool:

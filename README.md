@@ -42,8 +42,10 @@ switches to real providers as soon as credentials are configured.
 | **Tasks** | Prioritised task capture, deadlines, statuses and overdue tracking |
 
 ### Intelligence layer
-- Provider abstraction for **OpenAI-compatible**, **DeepSeek**, **Groq**,
-  **OpenRouter**, custom gateways and **Ollama**.
+- Provider abstraction for **OpenRouter**, **OpenAI**, **DeepSeek**, **Groq**,
+  custom gateways and **Ollama**, tried in that priority order by default.
+- Strongest-model selection per task, with automatic cross-provider fallback on
+  rate limits, timeouts, auth errors and outages.
 - Intelligent routing by task: simple → fast model, coding → coding model,
   complex reasoning → reasoning model, vision → vision model.
 - Capability guard that recognises impossible or unsupported requests and
@@ -102,15 +104,19 @@ The full design is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 | Task signal | Tier | Typical model |
 | --- | --- | --- |
-| Greeting, short factual answer, summarising a sentence | `fast` | lightweight model |
-| Study notes, explanations, research synthesis | `balanced` | balanced model |
-| System design, multi-step reasoning, interviews | `reasoning` | strongest model |
-| Code generation, debugging, refactoring | `coding` | coding model |
-| Image understanding | `vision` | vision model |
+| Greeting, thanks, short small talk | `fast` | Gemini 3.8 Flash / GPT-4.1 mini |
+| Normal questions, study notes, explanations, research synthesis | `balanced` | Claude Sonnet 5.5 / GPT-4.1 / DeepSeek V4.1 |
+| System design, multi-step reasoning, interviews | `reasoning` | Claude Sonnet / GPT-4.1 |
+| Code generation, debugging, refactoring | `coding` | Claude Sonnet / GPT-4.1 |
+| Image understanding | `vision` | Claude Sonnet / GPT-4.1 |
 
+Provider priority is **OpenRouter → OpenAI → DeepSeek → Groq → custom → Ollama**.
 The router considers the user's `quality` / `cost` / `local` preference, provider
-availability and the requested mode. Every chat response exposes the chosen
-provider, model, tier and routing reason.
+availability and the requested mode. If the first provider fails, the next
+ranked provider is tried automatically. Streaming falls back before the first
+token; after that, the partial answer is kept instead of being restarted.
+Every chat response exposes the provider, model, tier and routing reason that
+actually produced it. Demo is used only when no real provider is configured.
 
 ---
 
@@ -225,7 +231,8 @@ labels every response. The demo provider can still demonstrate study sets, code
 review/refactor/debug/explain, file analysis, interview scoring and chat
 streaming. Research explains that live search is unavailable rather than
 inventing sources. Set any provider key (or `OLLAMA_ENABLED=true`) to switch to
-real inference.
+real inference. Demo is a last resort: `DEMO_MODE=true` never overrides a
+configured provider key.
 
 ---
 
@@ -240,7 +247,8 @@ important groups are:
 | `REDIS_URL` | Optional; empty uses in-process fallback |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_API_SECRET` | Backend signing secrets |
 | `AUTH_SECRET` | Auth.js session encryption secret |
-| `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | AI providers |
+| `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | AI providers, tried in that order |
+| `PROVIDER_PRIORITY` | Override the provider order |
 | `OLLAMA_ENABLED`, `OLLAMA_BASE_URL` | Self-hosted local models |
 | `ROUTING_STRATEGY` | `quality`, `cost` or `local` |
 | `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `SEARXNG_URL` | Web research |

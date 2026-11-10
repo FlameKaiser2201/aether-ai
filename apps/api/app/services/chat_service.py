@@ -19,6 +19,7 @@ from app.ai.code_guard import (
     validate_text,
 )
 from app.ai.context import Source, build_messages, history_to_prompt
+from app.ai.execution import complete_with_fallback, stream_with_fallback
 from app.ai.prompts import build_system_prompt, summary_prompt
 from app.ai.registry import registry
 from app.ai.router import ClassificationInput, classify, plan_tasks
@@ -81,6 +82,33 @@ def _sse_plan(plan: list[PlanStep]) -> list[dict]:
     return [step.model_dump() for step in plan]
 
 
+def _meta_event(
+    *,
+    conversation_id: str,
+    provider: str,
+    model: str,
+    tier: str,
+    task_type: str,
+    routing_reason: str,
+    demo: bool,
+    plan: list[PlanStep],
+    mode: str,
+    message_id: str | None = None,
+) -> dict:
+    return {
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "provider": provider,
+        "model": model,
+        "tier": tier,
+        "task_type": task_type,
+        "routing_reason": routing_reason,
+        "demo": demo,
+        "plan": _sse_plan(plan),
+        "mode": mode,
+    }
+
+
 async def _save_assistant(
     db: AsyncSession,
     conversation: Conversation,
@@ -111,6 +139,9 @@ async def _save_assistant(
     conversation.last_message_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(message)
+    # The conversation's updated_at is maintained by the database. Refresh it
+    # so the non-streaming response can serialize it without a lazy load.
+    await db.refresh(conversation)
     return message
 
 
@@ -147,8 +178,11 @@ async def _post_turn(
                         )
                     )
                     messages.reverse()
-                    decision = registry.route(task_type="general", tier="fast")
-                    result = await decision.provider.complete(
+                    candidates = registry.candidates(
+                        task_type="general", tier="fast"
+                    )
+                    result, _ = await complete_with_fallback(
+                        candidates,
                         [
                             ChatMessage(role="system", content="You maintain concise conversation memory."),
                             ChatMessage(
@@ -159,7 +193,6 @@ async def _post_turn(
                                 ),
                             ),
                         ],
-                        decision.model,
                         GenerationConfig(temperature=0.2, max_tokens=600),
                     )
                     conversation.summary = result.text[:4000]
@@ -216,12 +249,13 @@ async def stream_chat(
         )
         task_type = decision.task_type
         tier = decision.tier
-        route = registry.route(
+        candidates = registry.candidates(
             task_type=decision.task_type,
             tier=decision.tier,
             strategy=preferences.routing_strategy,
             require_vision=has_images,
         )
+        route = candidates[0]
         provider_id = route.provider_id
         model_name = route.model
         routing_reason = route.reason
@@ -236,6 +270,7 @@ async def stream_chat(
             routing_reason = "Capability guard: request needs a real-world action"
             demo = False
             plan = []
+            candidates = []
         if len(plan) >= 2 and payload.mode != "voice":
             for step in plan:
                 db.add(
@@ -266,19 +301,20 @@ async def stream_chat(
         await db.refresh(conversation)
         await db.refresh(user_message)
 
-        meta_event = {
-            "conversation_id": conversation.id,
-            "message_id": None,
-            "provider": provider_id,
-            "model": model_name,
-            "tier": tier,
-            "task_type": task_type,
-            "routing_reason": routing_reason,
-            "demo": demo,
-            "plan": _sse_plan(plan),
-            "mode": payload.mode,
-        }
-        yield ("meta", meta_event)
+        yield (
+            "meta",
+            _meta_event(
+                conversation_id=conversation.id,
+                provider=provider_id,
+                model=model_name,
+                tier=tier,
+                task_type=task_type,
+                routing_reason=routing_reason,
+                demo=demo,
+                plan=plan,
+                mode=payload.mode,
+            ),
+        )
 
         if limitation is not None:
             content = limitation_markdown(limitation)
@@ -411,7 +447,36 @@ async def stream_chat(
         full_text = ""
         finish_reason = None
         if task_type == "coding":
-            result = await route.provider.complete(messages, route.model, generation)
+            result, used = await complete_with_fallback(
+                candidates, messages, generation
+            )
+            if used is not route:
+                provider_id = used.provider_id
+                model_name = used.model
+                tier = used.tier
+                demo = used.demo
+                routing_reason = f"{used.reason} · automatic fallback"
+                yield (
+                    "meta",
+                    _meta_event(
+                        conversation_id=conversation.id,
+                        provider=provider_id,
+                        model=model_name,
+                        tier=tier,
+                        task_type=task_type,
+                        routing_reason=routing_reason,
+                        demo=demo,
+                        plan=plan,
+                        mode=payload.mode,
+                    ),
+                )
+                yield (
+                    "status",
+                    {
+                        "stage": "fallback",
+                        "message": f"Switched to {used.provider_name} after a provider error.",
+                    },
+                )
             full_text = result.text
             usage_input, usage_output = result.usage.input_tokens, result.usage.output_tokens
             finish_reason = result.finish_reason
@@ -423,7 +488,12 @@ async def stream_chat(
                     blocks = extract_code_blocks(full_text)
                     if blocks and failing:
                         try:
-                            repair = await route.provider.complete(
+                            try:
+                                start = candidates.index(used)
+                            except ValueError:
+                                start = 0
+                            repair, _ = await complete_with_fallback(
+                                candidates[start:],
                                 [
                                     ChatMessage(
                                         role="system",
@@ -438,7 +508,6 @@ async def stream_chat(
                                         ),
                                     ),
                                 ],
-                                route.model,
                                 GenerationConfig(temperature=0.15, max_tokens=settings.max_output_tokens),
                             )
                             repaired_text = repair.text
@@ -459,18 +528,67 @@ async def stream_chat(
         else:
             streamed_parts: list[str] = []
             chunk_index = 0
-            async for chunk in route.provider.stream(messages, route.model, generation):
-                if chunk.text:
-                    streamed_parts.append(chunk.text)
-                    yield ("token", {"text": chunk.text})
-                    chunk_index += 1
-                    if chunk_index % 24 == 0 and is_disconnected and is_disconnected():
-                        break
-                if chunk.usage:
-                    usage_input = chunk.usage.input_tokens or usage_input
-                    usage_output = chunk.usage.output_tokens or usage_output
-                if chunk.finish_reason:
-                    finish_reason = chunk.finish_reason
+            try:
+                async for event in stream_with_fallback(
+                    candidates, messages, generation
+                ):
+                    if event.fallback_from is not None:
+                        selected = event.decision
+                        provider_id = selected.provider_id
+                        model_name = selected.model
+                        tier = selected.tier
+                        demo = selected.demo
+                        routing_reason = f"{selected.reason} · automatic fallback"
+                        usage_input = 0
+                        usage_output = 0
+                        yield (
+                            "meta",
+                            _meta_event(
+                                conversation_id=conversation.id,
+                                provider=provider_id,
+                                model=model_name,
+                                tier=tier,
+                                task_type=task_type,
+                                routing_reason=routing_reason,
+                                demo=demo,
+                                plan=plan,
+                                mode=payload.mode,
+                            ),
+                        )
+                        yield (
+                            "status",
+                            {
+                                "stage": "fallback",
+                                "message": f"Switched to {selected.provider_name} after a provider error.",
+                            },
+                        )
+                        continue
+                    chunk = event.chunk
+                    if chunk is None:
+                        continue
+                    if chunk.text:
+                        streamed_parts.append(chunk.text)
+                        yield ("token", {"text": chunk.text})
+                        chunk_index += 1
+                        if chunk_index % 24 == 0 and is_disconnected and is_disconnected():
+                            break
+                    if chunk.usage:
+                        usage_input = chunk.usage.input_tokens or usage_input
+                        usage_output = chunk.usage.output_tokens or usage_output
+                    if chunk.finish_reason:
+                        finish_reason = chunk.finish_reason
+            except Exception as exc:
+                if not "".join(streamed_parts).strip():
+                    raise
+                logger.warning("Stream interrupted after a partial response: %s", exc)
+                finish_reason = finish_reason or "interrupted"
+                yield (
+                    "status",
+                    {
+                        "stage": "interrupted",
+                        "message": "The provider stopped mid-response; keeping the partial answer.",
+                    },
+                )
             full_text = "".join(streamed_parts)
             if not usage_output:
                 usage_output = estimate_tokens(full_text)

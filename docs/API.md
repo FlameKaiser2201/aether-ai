@@ -286,7 +286,7 @@ characters.
     "checked": ["syntax", "delimiters", "security", "placeholders"]
   },
   "provider": "deepseek",
-  "model": "deepseek-chat"
+  "model": "deepseek-flash"
 }
 ```
 

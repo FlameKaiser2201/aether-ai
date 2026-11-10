@@ -94,13 +94,16 @@ from the placeholder. `API_URL` is the API's own Render URL.
 
 Optional keys:
 
-- AI: `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`,
-  `OPENROUTER_API_KEY`, or `OLLAMA_ENABLED=true`.
+- AI: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`,
+  `GROQ_API_KEY`, or `OLLAMA_ENABLED=true`. Providers are tried in that order;
+  override with `PROVIDER_PRIORITY`. If one fails, the next configured provider
+  is used automatically.
 - Research: `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `SERPER_API_KEY`.
 - Server voice fallbacks: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`.
 
 Without an AI key the API starts in clearly labelled demo mode; chat streaming,
-memory, tasks, files, and browser voice still work.
+memory, tasks, files, and browser voice still work. `DEMO_MODE=true` never
+overrides a configured provider key.
 
 ## 3. Deploy and verify
 

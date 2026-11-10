@@ -27,7 +27,7 @@ def _capabilities() -> CapabilityStatus:
     }
     return CapabilityStatus(
         providers=providers,
-        demo_mode=settings.demo_mode or not registry.has_real_provider,
+        demo_mode=not registry.has_real_provider,
         web_search=True,
         storage=storage.backend,
         redis=cache.available,
@@ -69,7 +69,7 @@ async def models(user: CurrentUser) -> dict:
     preferences = auth_service.get_preferences(user)
     return {
         "strategy": preferences.routing_strategy,
-        "demo_mode": settings.demo_mode or not registry.has_real_provider,
+        "demo_mode": not registry.has_real_provider,
         "models": registry.catalog(),
         "providers": registry.availability(),
     }

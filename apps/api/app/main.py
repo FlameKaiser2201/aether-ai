@@ -39,7 +39,13 @@ async def lifespan(_: FastAPI):
     if settings.effective_demo_mode:
         logger.warning(
             "No AI provider configured. AETHER is running in offline demo mode. "
-            "Set OPENAI_API_KEY, DEEPSEEK_API_KEY, or OLLAMA_ENABLED=true."
+            "Set OPENROUTER_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, "
+            "GROQ_API_KEY, or OLLAMA_ENABLED=true."
+        )
+    else:
+        logger.info(
+            "AI provider priority: %s",
+            ", ".join(registry.real_provider_ids) or "demo",
         )
     try:
         yield

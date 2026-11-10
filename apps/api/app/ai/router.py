@@ -34,6 +34,10 @@ RESEARCH_RE = re.compile(
     r"look up|web|internet|compare prices|market|report on)"
 )
 GREETING_RE = re.compile(r"(?i)^(hi|hello|hey|yo|namaste|good (morning|afternoon|evening))[\s!.,]*$")
+SMALL_TALK_RE = re.compile(
+    r"(?i)^(thanks|thank you|ok|okay|cool|nice|great|sure|got it|sounds good|"
+    r"how are you|how's it going|what's up|who are you)[\s!.,?]*$"
+)
 
 
 @dataclass(slots=True)
@@ -79,9 +83,9 @@ def classify(data: ClassificationInput) -> TaskDecision:
         return TaskDecision("voice", "fast", "Short voice turn")
     if len(text) > 1200 or REASONING_RE.search(text):
         return TaskDecision("reasoning", "reasoning", "Complex or multi-step reasoning detected")
-    if GREETING_RE.match(lowered):
-        return TaskDecision("general", "fast", "Conversational greeting")
-    return TaskDecision("general", "fast", "Short general request")
+    if GREETING_RE.match(lowered) or SMALL_TALK_RE.match(lowered):
+        return TaskDecision("general", "fast", "Conversational turn")
+    return TaskDecision("general", "balanced", "General request")
 
 
 def plan_tasks(message: str) -> list[PlanStep]:

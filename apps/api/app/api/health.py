@@ -17,7 +17,7 @@ async def health() -> dict:
         "status": "ok",
         "name": settings.app_name,
         "version": settings.app_version,
-        "demo_mode": settings.demo_mode or not registry.has_real_provider,
+        "demo_mode": not registry.has_real_provider,
     }
 
 
