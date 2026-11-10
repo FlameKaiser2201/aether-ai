@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import { refreshSession, sessionWasRefreshed } from "@/lib/session-refresh";
 import { readSSE } from "@/lib/sse";
 import type {
   ChatMeta,
@@ -58,16 +59,26 @@ export async function streamChat(
   handlers: StreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch("/api/proxy/chat/stream", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify(payload),
-    signal,
-    cache: "no-store",
-  });
+  const send = () =>
+    fetch("/api/proxy/chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(payload),
+      signal,
+      cache: "no-store",
+    });
+
+  let response = await send();
+  if (response.status === 401 && typeof window !== "undefined") {
+    // Refresh an expired backend access token once, then retry the turn.
+    const session = await refreshSession();
+    if (sessionWasRefreshed(session)) {
+      response = await send();
+    }
+  }
 
   if (!response.ok) {
     let message = "AETHER could not start the response.";

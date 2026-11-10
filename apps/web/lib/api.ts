@@ -1,4 +1,5 @@
 import { API_ERROR_FALLBACK } from "@/lib/constants";
+import { refreshSession, sessionWasRefreshed } from "@/lib/session-refresh";
 
 export class ApiError extends Error {
   status: number;
@@ -19,13 +20,24 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(`/api/proxy/${path.replace(/^\/+/, "")}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  const send = () =>
+    fetch(`/api/proxy/${path.replace(/^\/+/, "")}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+
+  let response = await send();
   if (response.status === 401 && typeof window !== "undefined" && !path.startsWith("auth/")) {
-    window.location.href = "/login";
+    // The backend access token can expire while a tab stays open. Ask Auth.js
+    // for a fresh JWT (which rotates the refresh token) and retry once.
+    const session = await refreshSession();
+    if (sessionWasRefreshed(session) && !(init.body instanceof ReadableStream)) {
+      response = await send();
+    }
+    if (response.status === 401) {
+      window.location.href = "/login";
+    }
   }
   if (!response.ok) {
     let message = API_ERROR_FALLBACK;
