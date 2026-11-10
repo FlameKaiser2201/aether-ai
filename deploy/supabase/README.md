@@ -82,7 +82,7 @@ deletes the file or account. Do not add public read policies.
 
 ## 6. Set the API environment
 
-On the API host (Northflank Sandbox), add these variables/secrets:
+On the API host (Render Free), add these variables/secrets:
 
 ```text
 DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<url-encoded-password>@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require

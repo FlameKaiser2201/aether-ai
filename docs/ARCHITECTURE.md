@@ -75,13 +75,13 @@ flowchart LR
 ### Deployment topology
 
 - **Web** — Cloudflare Workers via OpenNext (free plan) or the bundled Docker image. Cloudflare Pages is not used because `@cloudflare/next-on-pages` supports only Next.js ≤15.5.2; this app runs 15.5.29.
-- **API** — Northflank Sandbox (free Docker service, always on) or any container host. Stateless; scale horizontally when the host supports it.
+- **API** — Render Free (Docker web service, spins down after 15 minutes idle) or any container host. Stateless; scale horizontally when the host supports it.
 - **PostgreSQL** — Supabase Free through the session pooler with TLS, or the Compose service. Alembic owns the schema.
 - **Redis** — optional managed Redis (Upstash free, etc.) or the Compose service. The API degrades to an in-process limiter/cache if Redis is unavailable, with a startup warning.
-- **Storage** — Supabase Storage in production (private `aether-files` bucket); a local volume for Compose development. Northflank and Cloudflare have no persistent disk.
+- **Storage** — Supabase Storage in production (private `aether-files` bucket); a local volume for Compose development. Render Free and Cloudflare Workers have no persistent disk.
 - **Auth** — Auth.js (NextAuth v5) on the web tier, with a Credentials provider backed by FastAPI and optional GitHub/Google OAuth. FastAPI issues short-lived access tokens and rotating refresh tokens.
 
-The recommended free topology is **Cloudflare Workers + Northflank Sandbox +
+The recommended free topology is **Cloudflare Workers + Render Free +
 Supabase Free**; see [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ---
@@ -295,7 +295,7 @@ aether/
 │       ├── package.json
 │       └── Dockerfile
 ├── docs/                                architecture, API, deployment, security
-├── deploy/                              Cloudflare, Northflank, Supabase deployment assets
+├── deploy/                              Cloudflare, Render, Supabase deployment assets
 ├── infra/                               Railway, Vercel configs
 ├── scripts/                             env bootstrap, demo seed
 ├── docker-compose.yml
@@ -327,4 +327,4 @@ AETHER is a web application, not an operating-system agent. It cannot place call
 3. **AI systems** — providers, routing, context, memory, research, study, interview, code guard.
 4. **Frontend** — design system, landing, app shell, chat, voice, studios, history, memory, settings.
 5. **Voice** — browser loop, backend STT/TTS gateway, barge-in.
-6. **Deployment** — Docker, Compose, Cloudflare Workers + Northflank + Supabase free stack, CI, docs, GitHub release.
+6. **Deployment** — Docker, Compose, Cloudflare Workers + Render + Supabase free stack, CI, docs, GitHub release.

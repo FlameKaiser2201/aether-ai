@@ -36,8 +36,9 @@ export CLOUDFLARE_API_TOKEN=...   # PowerShell: $env:CLOUDFLARE_API_TOKEN="..."
 
 ## 2. Set runtime secrets
 
-Set these once per Worker. `API_URL` must be the Northflank public HTTPS origin;
-`AUTH_URL` and `NEXTAUTH_URL` must be the Worker's public HTTPS origin.
+Set these once per Worker. `API_URL` must be the Render public HTTPS origin
+(`https://<service-name>.onrender.com`); `AUTH_URL` and `NEXTAUTH_URL` must be
+the Worker's public HTTPS origin.
 
 ```bash
 cd apps/web
@@ -89,7 +90,7 @@ builds and deploys the Worker on Linux, which avoids Windows/OneDrive
 | `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts: Edit** |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages overview |
 | `AUTH_SECRET` | 48-byte random |
-| `API_URL` | Northflank public origin |
+| `API_URL` | Render public origin (`https://<service-name>.onrender.com`) |
 | `AUTH_URL` | `https://aether-web.<subdomain>.workers.dev` |
 | `NEXTAUTH_URL` | same as `AUTH_URL` |
 
@@ -99,7 +100,7 @@ four Worker secrets. Secrets persist across later deployments.
 ## 4. Point the API back at the Worker
 
 After the first Worker deploy, copy its URL and update the API service on
-Northflank:
+Render:
 
 ```text
 APP_URL=https://aether-web.<your-subdomain>.workers.dev

@@ -61,7 +61,7 @@ switches to real providers as soon as credentials are configured.
 - Supabase Storage when configured, local volume otherwise.
 - Redis when available, in-process fallback otherwise.
 - Alembic migrations, health/readiness probes, Docker images, CI, and
-  one-command deployment assets for the free Cloudflare + Northflank + Supabase
+  one-command deployment assets for the free Cloudflare + Render + Supabase
   stack.
 
 ---
@@ -125,7 +125,7 @@ provider, model, tier and routing reason.
 | AI | OpenAI-compatible, DeepSeek, Groq, OpenRouter, custom gateways, Ollama, Demo |
 | Search | Tavily, Brave, Serper, SearXNG |
 | Voice | Browser Web Speech API, Deepgram STT, ElevenLabs TTS |
-| Deployment | Docker, Compose, Cloudflare Workers (OpenNext), Northflank Sandbox, Supabase Free |
+| Deployment | Docker, Compose, Cloudflare Workers (OpenNext), Render Free, Supabase Free |
 
 ---
 
@@ -144,7 +144,7 @@ aether/
 ├─ docs/                   architecture, API, deployment, security
 ├─ deploy/
 │  ├─ cloudflare/          Cloudflare Workers (OpenNext) deployment guide
-│  ├─ northflank/          free FastAPI Docker host guide
+│  ├─ render/              free FastAPI Docker host guide
 │  └─ supabase/            schema.sql + Free-tier setup guide
 ├─ infra/railway/          monorepo-root Dockerfile for Railway
 ├─ scripts/                production start helper
@@ -281,7 +281,7 @@ The recommended deployment is **100% free**:
 | Layer | Service | Configuration |
 | --- | --- | --- |
 | Frontend | Cloudflare Workers (OpenNext) | [`apps/web/wrangler.jsonc`](apps/web/wrangler.jsonc), [`apps/web/open-next.config.ts`](apps/web/open-next.config.ts) |
-| API | Northflank Sandbox (Docker) | [`apps/api/Dockerfile`](apps/api/Dockerfile), [`deploy/northflank/README.md`](deploy/northflank/README.md) |
+| API | Render Free (Docker) | [`apps/api/Dockerfile`](apps/api/Dockerfile), [`deploy/render/README.md`](deploy/render/README.md) |
 | Database + storage | Supabase Free | [`deploy/supabase/schema.sql`](deploy/supabase/schema.sql), [`deploy/supabase/README.md`](deploy/supabase/README.md) |
 
 Quick start:
@@ -289,19 +289,22 @@ Quick start:
 1. Run [`deploy/supabase/schema.sql`](deploy/supabase/schema.sql) in a new
    Supabase project and copy the session-pooler URL, project URL, and
    service-role key.
-2. Deploy the API as a Northflank combined service from
-   `apps/api/Dockerfile` (context `apps/api`, public port 8000) and set the API
-   environment variables.
+2. Create a Render **Web Service** from this repository (Docker, root
+   directory `apps/api`, Dockerfile `Dockerfile`, health check `/health`,
+   Free instance) and set the API environment variables.
 3. Set the Worker secrets (`AUTH_SECRET`, `API_URL`, `AUTH_URL`,
    `NEXTAUTH_URL`) and run `npm run deploy:cloudflare` in `apps/web`.
 4. Update the API's `APP_URL` and `CORS_ORIGINS` to the Worker URL and redeploy.
 
 Full instructions, environment reference, migrations, and troubleshooting are
-in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Render-specific steps, including
+the manual service setup and free-plan sleep behaviour, are in
+[`deploy/render/README.md`](deploy/render/README.md).
 
 Optional targets: Docker Compose, Railway, Vercel (web only), Fly.io/ECS/VPS.
-The old Render Blueprint was removed; Cloudflare Pages is not used because its
-Next.js adapter does not support Next.js 15.5.29.
+The Render Blueprint was removed in favour of a manually configured service;
+Cloudflare Pages is not used because its Next.js adapter does not support
+Next.js 15.5.29.
 
 ---
 

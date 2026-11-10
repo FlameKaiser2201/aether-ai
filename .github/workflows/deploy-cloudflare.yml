@@ -5,7 +5,7 @@ name: Deploy web to Cloudflare
 #   CLOUDFLARE_API_TOKEN   — Workers Scripts: Edit
 #   CLOUDFLARE_ACCOUNT_ID  — Cloudflare dashboard → Workers & Pages overview
 #   AUTH_SECRET            — 48-byte random
-#   API_URL                — Northflank public origin
+#   API_URL                — Render public origin (https://<service>.onrender.com)
 #   AUTH_URL               — https://aether-web.<subdomain>.workers.dev
 #   NEXTAUTH_URL           — same as AUTH_URL
 #

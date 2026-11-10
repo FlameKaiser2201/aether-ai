@@ -5,7 +5,7 @@ AETHER deploys on a **100% free** stack:
 | Layer | Service | Free plan |
 | --- | --- | --- |
 | Frontend | **Cloudflare Workers** (Next.js 15 via OpenNext) | 100,000 requests/day, 10 ms CPU/request |
-| API | **Northflank Sandbox** (FastAPI Docker container) | 2 services, always on, no card, up to $20/month of compute |
+| API | **Render Free** (FastAPI Docker container) | 750 instance hours/month, 512 MB RAM, 0.1 CPU, no card, sleeps after 15 min idle |
 | Database | **Supabase Free** PostgreSQL | 500 MB database, 5 GB egress |
 | File storage | **Supabase Free** Storage | 1 GB, private bucket |
 
@@ -13,7 +13,7 @@ AETHER deploys on a **100% free** stack:
 Browser
   │  HTTPS
   ▼
-Cloudflare Worker  ── server-side fetch ──►  Northflank Sandbox
+Cloudflare Worker  ── server-side fetch ──►  Render Free
 (Next.js + Auth.js)                          (FastAPI + SQLAlchemy)
   │                                                  │
   └── same-origin /api/proxy/*                      ├── Supabase Postgres (session pooler, TLS)
@@ -46,17 +46,26 @@ exceeds that on login/register, and FastAPI + Pydantic + SQLAlchemy requests
 regularly exceed it too. The API would fail with `Error 1102` (CPU limit).
 Cloudflare Containers and Workers Paid would work but are not free.
 
-### Hugging Face Spaces is not used
+### Northflank is not used
 
-Hugging Face now requires a paid plan (PRO for personal accounts) to create
-Docker Spaces. Northflank Sandbox is free, requires no card, includes two
-services, and **does not sleep** — which matters for chat streaming and voice.
+Northflank's pricing page advertises a free Sandbox with "No card needed", but
+its service creation form now requires a card even for the free plan
+("Creating this service requires a card"). AETHER does not ask you to add one.
 
-### Render is not used
+### Railway is not used
 
-The old `render.yaml` Blueprint has been removed. It created two Starter web
-services (about $14/month) and a free Postgres that expired after 30 days. The
-new stack is $0 and the database does not expire.
+Railway Free includes only **$1/month** of usage credit. An always-on 0.5 GB
+service costs roughly **$5/month** in RAM alone (before CPU), so the service is
+suspended after a few days. The $5 trial credit is a one-time 30-day grant, not
+a recurring allowance.
+
+### Render Free is used
+
+Render Free requires **no card**, includes **750 instance hours/month**, 512 MB
+RAM, Docker support, and health checks. The trade-off is that free services
+**spin down after 15 minutes idle**; the first request takes about 50 seconds to
+wake the container. Supabase stores the database and files, so Render needs no
+persistent disk.
 
 ---
 
@@ -65,14 +74,14 @@ new stack is $0 and the database does not expire.
 - GitHub account with the repository (public:
   <https://github.com/FlameKaiser2201/aether-ai>).
 - [Cloudflare](https://dash.cloudflare.com/sign-up) account (free).
-- [Northflank](https://app.northflank.com/signup) account (free Sandbox, no
+- [Render](https://dashboard.render.com/register) account (free Hobby plan, no
   card).
 - [Supabase](https://supabase.com/dashboard) account (free).
 - Node.js 20+ (22 recommended) and Python 3.12+ for local builds.
 - Optional: an AI provider key (DeepSeek, OpenAI, Groq, OpenRouter) and search
   / voice keys. Without them the app runs in clearly labelled demo mode.
 
-Generate the secrets now — you will paste them into Northflank and Cloudflare:
+Generate the secrets now — you will paste them into Render and Cloudflare:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # JWT_ACCESS_SECRET
@@ -131,25 +140,22 @@ dashboard weekly or run a query to keep it awake.
 
 ---
 
-## 2. Northflank Sandbox — FastAPI API
+## 2. Render Free — FastAPI API
 
-Full walkthrough: [`deploy/northflank/README.md`](../deploy/northflank/README.md).
+Full walkthrough: [`deploy/render/README.md`](../deploy/render/README.md).
 
-1. Sign up at <https://app.northflank.com/signup> with GitHub. Choose the
-   **Sandbox** plan (free, no card).
-2. Create a project in the region closest to Supabase.
-3. **Create → Service → Combined service**.
-4. Connect `FlameKaiser2201/aether-ai`, branch `main`.
-5. Build options:
-   - **Build type:** Dockerfile
-   - **Dockerfile path:** `apps/api/Dockerfile`
-   - **Build context:** `apps/api`
-6. Add a **public HTTP port** on `8000`, name it `api`.
-7. Resources: keep the Sandbox default, or choose **0.5 vCPU / 1 GB** if
-   available. The API fits in 512 MB; 1 GB makes Argon2 logins faster.
-8. Health check: `GET /health`, port `8000`, initial delay 30s.
-9. Add the environment variables below in **Service → Environment**. Mark
-   secrets as **secret**, not plain variables.
+1. Sign up at <https://dashboard.render.com/register> with GitHub. The Hobby
+   plan is free and does not ask for a card.
+2. **New → Web Service** and select `FlameKaiser2201/aether-ai`, branch `main`.
+3. Name the service (for example `aether-api-2201`). Render names are unique;
+   the public URL is `https://<service-name>.onrender.com`.
+4. Language **Docker**, region **Virginia (US East)** or the closest free
+   region.
+5. **Root Directory:** `apps/api`. **Dockerfile Path:** `Dockerfile`.
+6. Compute: **Free** (`$0/month`, `0.1 CPU`, `512 MB RAM`).
+7. **Advanced → Health Check Path:** `/health`.
+8. Add the environment variables below with **Add from .env**. Mark secrets as
+   secret values.
 
 ```text
 ENVIRONMENT=production
@@ -162,9 +168,9 @@ SEED_DEMO=false
 TRUST_PROXY_HEADERS=true
 
 APP_URL=https://<cloudflare-worker-url>
-API_URL=https://<northflank-service-url>
+API_URL=https://<render-service-url>
 CORS_ORIGINS=https://<cloudflare-worker-url>
-TRUSTED_HOSTS=<northflank-service-host>
+TRUSTED_HOSTS=*
 
 DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<url-encoded-password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require
 DB_POOL_SIZE=5
@@ -181,22 +187,30 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 SUPABASE_BUCKET=aether-files
 ```
 
-`TRUSTED_HOSTS` is a hostname only: no `https://`, no path, no port. It is the
-host from the Northflank public DNS.
+`TRUSTED_HOSTS=*` disables Starlette's Host allow-list because Render's health
+checker can use an internal `Host` header. The API is still protected by CORS
+and the Worker proxy. If you prefer a strict list, use
+`TRUSTED_HOSTS=*.onrender.com,localhost,127.0.0.1` and confirm the health check
+still passes after the deploy.
 
 `APP_URL` and `CORS_ORIGINS` need the Cloudflare Worker URL. Deploy the API
 first, then the Worker, then update these two values and redeploy the API.
 
-10. Click **Create service** / **Build now**. The container waits for Supabase,
-    runs `alembic upgrade head`, then starts Uvicorn on port 8000.
-11. Copy the public DNS from **Networking**. Verify:
+9. Click **Deploy web service**. The container waits for Supabase, runs
+   `alembic upgrade head`, then starts Uvicorn on `$PORT` (8000). The Alembic
+   path reuses the API's `_prepare_engine` helper, so `?sslmode=require` is
+   translated into the `ssl` argument that `asyncpg` accepts.
+10. Copy the public URL and verify:
 
 ```bash
-curl https://<northflank-service-url>/health
+curl https://<render-service-url>/health
 # {"status":"ok","version":"1.0.0"}
 
-curl https://<northflank-service-url>/api/v1/health/ready
+curl https://<render-service-url>/api/v1/health/ready
 ```
+
+The first request after 15 minutes of inactivity can take about 50 seconds while
+the free instance wakes. Open `/health` once before a demo to warm it up.
 
 Optional: add `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, or
 `OPENROUTER_API_KEY` to leave demo mode. Add `TAVILY_API_KEY` /
@@ -248,7 +262,7 @@ Values:
 
 ```text
 AUTH_SECRET=<the 48-byte random value>
-API_URL=https://<northflank-service-url>
+API_URL=https://<render-service-url>
 AUTH_URL=https://aether-web.<your-subdomain>.workers.dev
 NEXTAUTH_URL=https://aether-web.<your-subdomain>.workers.dev
 ```
@@ -281,14 +295,14 @@ run it from **Actions → Deploy web to Cloudflare → Run workflow**.
 
 ### 3.4 Wire the API back to the Worker
 
-Update the Northflank API environment:
+Update the Render API environment:
 
 ```text
 APP_URL=https://aether-web.<your-subdomain>.workers.dev
 CORS_ORIGINS=https://aether-web.<your-subdomain>.workers.dev
 ```
 
-Redeploy the API service. `API_URL` on the API stays its own Northflank URL.
+Redeploy the API service. `API_URL` on the API stays its own Render URL.
 
 ### 3.5 Custom domain (optional)
 
@@ -307,8 +321,8 @@ Run these in order:
 
 ```bash
 # API health and database readiness
-curl https://<northflank-service-url>/health
-curl https://<northflank-service-url>/api/v1/health/ready
+curl https://<render-service-url>/health
+curl https://<render-service-url>/api/v1/health/ready
 
 # Web tier
 curl -I https://<worker-url>
@@ -325,14 +339,14 @@ Then in the browser:
    persist.
 5. Use **Voice** in Chrome/Edge and allow microphone access. Browser speech
    works without any server key.
-6. Check the Northflank logs for `Database tables verified` / migration output
-   and no repeated connection errors.
+6. Check the Render logs for `Database tables verified` / migration output and
+   no repeated connection errors.
 
 ---
 
 ## 5. Environment reference
 
-### API (Northflank)
+### API (Render)
 
 | Variable | Required | Value |
 | --- | --- | --- |
@@ -342,14 +356,14 @@ Then in the browser:
 | `JWT_REFRESH_SECRET` | yes | unique 48-byte random |
 | `INTERNAL_API_SECRET` | yes | unique 48-byte random |
 | `APP_URL` | yes | Cloudflare Worker origin |
-| `API_URL` | yes | Northflank public origin |
+| `API_URL` | yes | Render public origin |
 | `CORS_ORIGINS` | yes | Cloudflare Worker origin |
-| `TRUSTED_HOSTS` | yes | Northflank hostname only |
+| `TRUSTED_HOSTS` | yes | `*` (or `*.onrender.com` after testing the health check) |
 | `COOKIE_SECURE` | yes | `true` |
 | `AUTO_CREATE_TABLES` | yes | `false` (Alembic owns the schema) |
 | `ENABLE_API_DOCS` | recommended | `false` |
 | `SEED_DEMO` | yes | `false` |
-| `TRUST_PROXY_HEADERS` | yes | `true` on Northflank |
+| `TRUST_PROXY_HEADERS` | yes | `true` on Render |
 | `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | recommended | `5` / `5` on the free tier |
 | `STORAGE_BACKEND` | yes | `supabase` |
 | `SUPABASE_URL` | yes | `https://<project-ref>.supabase.co` |
@@ -363,7 +377,7 @@ Then in the browser:
 | Variable | Required | Value |
 | --- | --- | --- |
 | `AUTH_SECRET` | yes | unique 48-byte random |
-| `API_URL` | yes | Northflank public origin |
+| `API_URL` | yes | Render public origin |
 | `AUTH_URL` | yes | Worker public origin |
 | `NEXTAUTH_URL` | yes | Worker public origin |
 
@@ -383,7 +397,7 @@ alembic current
 alembic history
 ```
 
-The Northflank Docker command runs `alembic upgrade head` with retries before
+The Render Docker command runs `alembic upgrade head` with retries before
 starting Uvicorn. The Supabase `schema.sql` already stamps the initial revision,
 so the first boot is a no-op.
 
@@ -456,7 +470,8 @@ These are not part of the free stack but remain in the repository:
 | Vercel (web only) | `apps/web/vercel.json` | Hobby plan; API must be hosted elsewhere |
 | Fly.io / ECS / VPS | `apps/api/Dockerfile`, `apps/web/Dockerfile` | Use any container host |
 
-Render is **not** a supported target. The old `render.yaml` was removed.
+Render Free is the recommended API target and is configured manually; the old
+`render.yaml` Blueprint was removed.
 
 ---
 
@@ -468,8 +483,8 @@ Render is **not** a supported target. The old `render.yaml` was removed.
       `SEED_DEMO=false`, `AUTO_CREATE_TABLES=false`.
 - [ ] `AUTH_URL` and `NEXTAUTH_URL` match the Worker's public HTTPS origin.
 - [ ] `CORS_ORIGINS` lists exact origins (no `*`).
-- [ ] `TRUSTED_HOSTS` lists the Northflank hostname only.
-- [ ] `TRUST_PROXY_HEADERS=true` because Northflank terminates TLS.
+- [ ] `TRUSTED_HOSTS` is `*` or a tested `*.onrender.com` allow-list.
+- [ ] `TRUST_PROXY_HEADERS=true` because Render terminates TLS.
 - [ ] Supabase `schema.sql` has been run; RLS is enabled on all AETHER tables.
 - [ ] The `aether-files` bucket is **private**.
 - [ ] `STORAGE_BACKEND=supabase`; no uploads rely on local disk.
@@ -487,7 +502,7 @@ Render is **not** a supported target. The old `render.yaml` was removed.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `400 Invalid host header` | `TRUSTED_HOSTS` missing the public hostname | Add the Northflank hostname only (no scheme/path) |
+| `400 Invalid host header` | `TRUSTED_HOSTS` missing the public hostname | Use `*` or add the Render hostname only (no scheme/path) |
 | `database migration failed after 30 attempts` | Wrong `DATABASE_URL`, Supabase paused, or TLS issue | Check the session-pooler host, URL-encoded password, and `?sslmode=require` |
 | `asyncpg` rejects `sslmode` | URL was passed to a driver that does not translate it | Use this repo's `database.py`, which moves `sslmode` into `connect_args` |
 | `401` loop in the web app | `AUTH_SECRET` differs between deploys, or `API_URL` is wrong | Keep `AUTH_SECRET` stable and check the Worker secrets |
@@ -499,7 +514,8 @@ Render is **not** a supported target. The old `render.yaml` was removed.
 | Answers say "demo mode" | No AI provider configured | Add `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / etc. |
 | Research returns no sources | No search provider configured | Add Tavily/Brave/Serper/SearXNG |
 | `429` responses | Rate limit reached | Wait for `Retry-After` or raise limits |
-| Northflank build fails | Wrong Dockerfile path/context | Use `apps/api/Dockerfile` and context `apps/api` |
+| Render build fails | Wrong Dockerfile path/root directory | Use root directory `apps/api` and Dockerfile `Dockerfile` |
+| Render returns `502` on first request | Free instance is waking after 15 minutes idle | Wait ~50 seconds and retry; open `/health` before a demo |
 | Supabase project paused | Free plan inactivity | Open the dashboard and restore the project |
 
 ---
@@ -509,7 +525,7 @@ Render is **not** a supported target. The old `render.yaml` was removed.
 | Service | Free allowance | What it means for AETHER |
 | --- | --- | --- |
 | Cloudflare Workers | 100,000 requests/day, 10 ms CPU/request, 128 MB | Fine for a demo/small deployment; heavy SSR can hit the CPU cap |
-| Northflank Sandbox | 2 services, 2 jobs, 1 database, up to $20/month compute | One always-on API service fits comfortably; no horizontal scaling |
+| Render Free | 750 instance hours/month, 512 MB RAM, 0.1 CPU | One API service fits; it sleeps after 15 min idle and wakes in ~50 s |
 | Supabase Free | 500 MB DB, 1 GB storage, 5 GB egress, 2 projects | Enough for conversations, files, and memories; pauses after 1 week idle |
 | AI providers | Pay-per-use (optional) | AETHER runs in demo mode with no keys; add a key for real inference |
 
@@ -522,9 +538,9 @@ provider usage).
 
 | Platform | API | Web | Database | Notes |
 | --- | --- | --- | --- | --- |
-| **Cloudflare + Northflank + Supabase** | ✅ | ✅ | Supabase Free | **Recommended free stack** |
+| **Cloudflare + Render + Supabase** | ✅ | ✅ | Supabase Free | **Recommended free stack** |
 | Docker Compose | ✅ | ✅ | PostgreSQL container | Full local/production-like stack |
 | Railway | ✅ | ✅ | Railway PostgreSQL | Paid after trial credits |
 | Vercel | external | ✅ | external | Web only; use Supabase + a free API host |
 | Fly.io / ECS / VPS | ✅ | ✅ | managed/self-hosted | Use the Docker images |
-| Render | ❌ | ❌ | ❌ | Blueprint removed; not part of this stack |
+| Render | ✅ | ❌ | Supabase Free | Manual Docker web service; the Blueprint was removed |
