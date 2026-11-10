@@ -16,7 +16,8 @@ This document is the source of truth for the system design. It is intentionally 
 5. **Memory with provenance** — short-term context (rolling summary + recent turns) and long-term memory (facts, preferences, goals, projects) are separate, inspectable and deletable.
 6. **Secure by construction** — server-only secrets, JWT rotation, origin checks, rate limits, SSRF guards, upload validation, prompt-injection delimiting, strict CSP.
 7. **Production defaults** — async I/O end to end, stateless API, Postgres/Redis, Docker, migrations, health checks, CI, structured logs.
-8. **Zero-key demo mode** — the product remains explorable without paid provider keys; the UI clearly labels demo responses.
+8. **Zero-key demo mode** - the product remains explorable without paid provider keys; the UI clearly labels demo responses.
+9. **Execution-first conversation** - the assistant performs the task and leads with the result; plans and visible step-by-step reasoning are opt-in.
 
 ---
 

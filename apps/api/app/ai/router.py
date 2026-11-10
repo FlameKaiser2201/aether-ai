@@ -90,10 +90,6 @@ def plan_tasks(message: str) -> list[PlanStep]:
     numbered = re.findall(r"(?m)^\s*(?:\d+[.)]|[-*•])\s+(.{4,180})$", text)
     if len(numbered) >= 2:
         candidates = numbered
-    elif "\n" in text:
-        lines = [line.strip() for line in text.splitlines() if len(line.strip()) > 8]
-        if len(lines) >= 2:
-            candidates = lines
     else:
         split = re.split(r"(?i)\s+(?:and then|then also|also|and also|plus)\s+", text)
         if len(split) >= 2:

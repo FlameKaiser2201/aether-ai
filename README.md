@@ -51,6 +51,8 @@ switches to real providers as soon as credentials are configured.
 - Code guard that statically validates syntax, delimiters, placeholders,
   SQL/JSON structure, security smells and edge cases before returning generated
   code, with one automatic repair round.
+- Execution-first conversation: answers lead, plans are opt-in, and step-by-step
+  reasoning appears only when the user asks for it or the task genuinely needs it.
 - Honest demo provider so every feature remains explorable without keys.
 
 ### Security and operations

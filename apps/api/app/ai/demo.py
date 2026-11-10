@@ -22,6 +22,46 @@ from app.ai.types import (
 from app.core.config import settings
 from app.utils.text import estimate_tokens
 
+GREETING_RE = re.compile(
+    r"(?i)^(hi|hello|hey|yo|namaste|good (morning|afternoon|evening))[\s!.,]*$"
+)
+
+DEMO_KNOWLEDGE: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"(?i)\b(?:artificial intelligence|machine intelligence)\b|\bai\b"),
+        "AI—artificial intelligence—is the field of building systems that perform tasks that normally "
+        "require human intelligence: understanding language, recognizing patterns, reasoning, and making "
+        "decisions. Modern AI is mostly machine learning, where models learn from data instead of following "
+        "hand-written rules. The current wave is dominated by large neural networks, especially transformers "
+        "for language and diffusion models for images. AI is strongest on pattern-heavy tasks and weakest on "
+        "guaranteeing truth, so verification and human oversight matter.",
+    ),
+    (
+        re.compile(r"(?i)\boperating systems?\b"),
+        "An operating system is the software layer that manages a computer's hardware and provides services "
+        "to applications. It schedules CPU time, allocates memory, manages files and devices, enforces "
+        "permissions, and handles interrupts and I/O. The core is the kernel; user programs interact with it "
+        "through system calls. Common designs include monolithic kernels such as Linux, microkernels, and "
+        "hybrid kernels such as Windows and macOS. The main trade-offs are performance, isolation, and complexity.",
+    ),
+    (
+        re.compile(r"(?i)\bmachine learning\b"),
+        "Machine learning is a branch of AI where a system learns patterns from data instead of following "
+        "explicit rules. Supervised learning maps labeled inputs to outputs, unsupervised learning finds "
+        "structure in unlabeled data, and reinforcement learning improves through reward and penalty. "
+        "Generalization to unseen data is the goal; overfitting, data quality, and distribution shift are the "
+        "main failure modes.",
+    ),
+    (
+        re.compile(r"(?i)\bpython\b"),
+        "Python is a high-level, dynamically typed programming language known for readable syntax and a large "
+        "standard library. It is widely used for web backends, data analysis, machine learning, automation, and "
+        "scripting. CPython compiles to bytecode and runs on a virtual machine; performance-critical paths often "
+        "move to native extensions or separate services. Its main trade-offs are execution speed and packaging "
+        "complexity, not expressiveness.",
+    ),
+]
+
 
 class DemoProvider(ChatProvider):
     id = "demo"
@@ -39,8 +79,7 @@ class DemoProvider(ChatProvider):
         user_text = next(
             (m.text() for m in reversed(messages) if m.role == "user"), ""
         )
-        system_text = next((m.text() for m in messages if m.role == "system"), "")
-        response = self._compose(user_text, system_text)
+        response = self._compose(user_text)
         words = re.findall(r"\S+\s*", response)
         for word in words:
             yield StreamChunk(text=word)
@@ -55,25 +94,20 @@ class DemoProvider(ChatProvider):
             ),
         )
 
-    def _compose(self, user_text: str, system_text: str) -> str:
+    def _compose(self, user_text: str) -> str:
         text = user_text.strip()
         lowered = text.lower()
         if not text:
-            return "I'm listening. Ask me to explain a topic, debug code, plan revision, or practice an interview."
-        if any(g in lowered for g in ("hello", "hi ", "hey", "namaste")) and len(text) < 40:
+            return (
+                "I'm listening. Ask me to explain a topic, debug code, generate study material, "
+                "or practice an interview."
+            )
+        if GREETING_RE.match(text):
             return (
                 "Hey — I'm AETHER. I can help you study, write and review code, prepare for interviews, "
-                "analyze documents, and research topics with sources. This instance is in zero-key demo mode, "
-                "so responses come from a small local engine; add a provider key in the environment to unlock "
-                "the full models. What would you like to work on?"
+                "analyze documents, and research topics. This instance is in zero-key demo mode, so I'm "
+                "running a small local engine; add a provider key for full model quality. What are you working on?"
             )
-        if "demo mode" in system_text.lower() or "zero-key" in system_text.lower():
-            notice = (
-                "> Demo engine active. Add `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, or enable Ollama "
-                "for full model quality.\n\n"
-            )
-        else:
-            notice = ""
 
         if "return only valid json" in lowered:
             return self._json_demo(text)
@@ -83,44 +117,161 @@ class DemoProvider(ChatProvider):
 
         action = self._code_action(text)
         if action:
-            return notice + self._code_action_demo(action, text)
+            return self._code_action_demo(action, text)
 
-        if any(word in lowered for word in ("code", "debug", "refactor", "python", "javascript", "typescript", "java", "sql", "react")):
-            return notice + self._coding_chat_demo(text)
+        knowledge = self._knowledge_answer(lowered)
+        if knowledge and lowered.startswith(("tell me about", "what is", "what are", "introduce ")):
+            return knowledge
+
+        if any(
+            word in lowered
+            for word in (
+                "code", "debug", "refactor", "python", "javascript", "typescript",
+                "java", "sql", "react", "discord bot",
+            )
+        ):
+            return self._coding_chat_demo(text)
         if "interview" in lowered:
-            return notice + (
-                "Let's practice. A strong first answer uses **Situation → Action → Result** and ends with a measurable outcome.\n\n"
-                "**Sample question:** Tell me about a time you had to learn a new technology under a deadline. "
+            return (
+                "**Practice question:** Tell me about a time you had to learn a new technology under a deadline. "
                 "What was the situation, what did you do, and what changed because of it?\n\n"
-                "Answer in 4–6 sentences. In the full version I will score clarity, structure, depth, and communication."
+                "Answer in 4–6 sentences using Situation → Action → Result. In the full version I score clarity, "
+                "structure, depth, and communication."
             )
-        if any(word in lowered for word in ("quiz", "flashcard", "notes", "exam", "revise", "study", "summary")):
-            topic = re.sub(r"(?i)^(make|create|generate|give me|please).*?(notes|quiz|flashcards|summary).*?(on|about|for)?\s*", "", text).strip() or "your topic"
-            return notice + (
-                f"**Study starter — {topic[:120]}**\n\n"
-                "**1. Core idea** — Write the topic in one sentence you could explain to a friend.\n"
-                "**2. Why it matters** — List three real problems this concept solves.\n"
-                "**3. Key parts** — Break it into 3–5 components and define each.\n"
-                "**4. Worked example** — Solve one small example step by step.\n"
-                "**5. Check yourself** — What changes if the main assumption is removed?\n\n"
-                "In the full version I generate structured notes, quizzes with answer keys, spaced-repetition flashcards, and a dated revision plan."
-            )
+
+        if knowledge and not self._is_study_artifact(lowered):
+            return knowledge
+        if self._is_study_artifact(lowered):
+            return self._study_demo(text)
+        if knowledge:
+            return knowledge
+
         if any(word in lowered for word in ("search", "latest", "news", "research", "source")):
-            return notice + (
-                "Research mode needs a live model plus a search key (Tavily, Brave, Serper, SearXNG) or the "
-                "DuckDuckGo fallback. Once configured, I fetch pages safely, cite every claim with numbered "
-                "sources, and clearly separate evidence from interpretation."
+            return (
+                "Live research needs a search provider (Tavily, Brave, Serper, or SearXNG) and a model "
+                "provider. Without them I can't verify current sources, so I won't invent citations. "
+                "Add a search key and ask again; I'll fetch the pages and cite each material claim."
             )
-        return notice + (
-            "Here is a structured first pass.\n\n"
-            f"**Your request:** {text[:400]}\n\n"
-            "**Plan**\n"
-            "1. Clarify the goal and success criteria.\n"
-            "2. Break the work into the smallest useful steps.\n"
-            "3. Produce the artifact — notes, code, a plan, or a draft.\n"
-            "4. Check edge cases and verify the result.\n\n"
-            "**What I need from you:** the context, constraints, and desired format. "
-            "For full reasoning, memory, file analysis, and voice replies, configure an AI provider."
+
+        return (
+            f"I can help with “{text[:160]}”, but this instance is running the zero-key demo engine, so I "
+            "can't produce a reliable answer to arbitrary prompts yet. Add one provider key "
+            "(DEEPSEEK_API_KEY, OPENAI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY) and ask again. "
+            "I can still generate study sets, review pasted code, analyze documents, manage tasks and "
+            "memory, and handle browser voice right now."
+        )
+
+    @staticmethod
+    def _is_study_artifact(lowered: str) -> bool:
+        return any(
+            marker in lowered
+            for marker in (
+                "quiz", "flashcard", "notes", "exam", "revise", "revision",
+                "study", "important question", "practice question", "summary", "tips",
+            )
+        )
+
+    @staticmethod
+    def _knowledge_answer(lowered: str) -> str | None:
+        return next(
+            (answer for pattern, answer in DEMO_KNOWLEDGE if pattern.search(lowered)),
+            None,
+        )
+
+    @staticmethod
+    def _extract_topic(text: str) -> str:
+        cleaned = re.sub(
+            r"(?i)^(please\s+)?(?:make|create|generate|give me|write|prepare|explain|tell me about)\s+",
+            "",
+            text,
+        )
+        cleaned = re.sub(
+            r"(?i)\b(?:important|practice|exam|study)\s+questions?|\bquestions?|\bquiz|"
+            r"\bflashcards?|\bnotes?|\bsummary|\brevision plan|\bstudy plan|\btips?|\bexam\b",
+            " ",
+            cleaned,
+        )
+        cleaned = re.sub(r"(?i)\b(?:for|on|about|of|my|simply|please|briefly)\b", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,:;-")
+        return cleaned[:120] or "the topic"
+
+    def _study_demo(self, text: str) -> str:
+        topic = self._extract_topic(text)
+        lowered = text.lower()
+        if "tip" in lowered:
+            return (
+                "**Three study techniques that work**\n\n"
+                "1. **Active recall** — close the notes and retrieve the answer from memory. "
+                "The effort of retrieval is what builds durable memory.\n"
+                "2. **Spaced repetition** — review at increasing intervals (for example 1 day, 3 days, "
+                "7 days, then 21 days) instead of rereading everything the night before.\n"
+                "3. **Interleaving** — mix related problem types in one session so you learn to choose "
+                "the right method, not just repeat the last one."
+            )
+        if "question" in lowered or "exam" in lowered or "quiz" in lowered:
+            return self._study_questions(topic, lowered)
+        if "flashcard" in lowered:
+            return self._study_flashcards(topic)
+        return self._study_notes(topic)
+
+    @staticmethod
+    def _study_questions(topic: str, lowered: str) -> str:
+        if "operating system" in lowered or topic.lower() in {"operating systems", "os"}:
+            title = "Important operating systems questions"
+            questions = [
+                "Explain the difference between a process and a thread.",
+                "What is virtual memory, and how does a page fault work?",
+                "Compare paging and segmentation.",
+                "What are the four necessary conditions for deadlock, and how can each be prevented?",
+                "Compare FCFS, SJF, and round-robin CPU scheduling with examples.",
+                "What is thrashing? How can an operating system detect and reduce it?",
+                "Explain inter-process communication. Compare pipes, message queues, and shared memory.",
+                "What happens during a context switch, and why is it expensive?",
+                "Compare monolithic, microkernel, and hybrid kernel architectures.",
+                "How do mutexes, semaphores, and condition variables differ? Give a use case for each.",
+            ]
+        else:
+            title = f"Important questions — {topic}"
+            questions = [
+                f"Define {topic} in one clear sentence.",
+                f"Explain how {topic} works, step by step.",
+                f"Give a concrete example of {topic} in practice.",
+                f"Compare {topic} with the closest alternative or related concept.",
+                f"What are the main components of {topic}, and what does each do?",
+                f"What assumptions does {topic} rely on, and what happens when they fail?",
+                f"Describe a common mistake people make with {topic} and how to avoid it.",
+                f"How would you test or verify that {topic} is working correctly?",
+                f"What is the cost of using {topic}, and how would you reduce it?",
+                f"Apply {topic} to a small real-world scenario and explain the result.",
+            ]
+        numbered = "\n".join(f"{index}. {question}" for index, question in enumerate(questions, 1))
+        return f"**{title}**\n\n{numbered}"
+
+    @staticmethod
+    def _study_flashcards(topic: str) -> str:
+        cards = [
+            (f"What is {topic}?", f"Define {topic} in one sentence, then name one thing it is not."),
+            (f"Why does {topic} matter?", f"Name a real problem that {topic} solves."),
+            (f"How does {topic} work?", "Describe the main steps or components in order."),
+            (f"Give an example of {topic}.", "Use a small, concrete case and state the result."),
+            (f"What is a common mistake with {topic}?", "Name the mistake and the correction."),
+            (f"How would you verify {topic}?", "Describe one test or check that would catch a failure."),
+        ]
+        body = "\n\n".join(
+            f"**{index}. {front}**\n{back}" for index, (front, back) in enumerate(cards, 1)
+        )
+        return f"**Flashcards — {topic}**\n\n{body}"
+
+    @staticmethod
+    def _study_notes(topic: str) -> str:
+        return (
+            f"**{topic} — notes**\n\n"
+            f"**Definition:** Write {topic} in one sentence you could explain to a friend.\n\n"
+            "**Why it matters:** Name three real problems it solves.\n\n"
+            "**How it works:** Break it into three to five components and define each.\n\n"
+            "**Worked example:** Solve one small case and state the result.\n\n"
+            "**Common mistakes:** List two mistakes and the correction for each.\n\n"
+            "**Check yourself:** Explain the topic aloud without notes, then test one edge case."
         )
 
     @staticmethod
@@ -305,22 +456,47 @@ class DemoProvider(ChatProvider):
                 "            result.append(str(number))\n"
                 "    return result\n",
             ),
+            "discord bot": (
+                "python",
+                "import os\n\n"
+                "import discord\n"
+                "from discord.ext import commands\n\n"
+                "intents = discord.Intents.default()\n"
+                "intents.message_content = True\n"
+                "bot = commands.Bot(command_prefix=\"!\", intents=intents)\n\n"
+                "@bot.event\n"
+                "async def on_ready() -> None:\n"
+                "    print(f\"Logged in as {bot.user}\")\n\n"
+                "@bot.command()\n"
+                "async def ping(ctx: commands.Context) -> None:\n"
+                "    await ctx.reply(f\"Pong! {round(bot.latency * 1000)} ms\")\n\n"
+                "def main() -> None:\n"
+                "    token = os.environ.get(\"DISCORD_TOKEN\")\n"
+                "    if not token:\n"
+                "        raise SystemExit(\"Set DISCORD_TOKEN\")\n"
+                "    bot.run(token)\n\n"
+                "if __name__ == \"__main__\":\n"
+                "    main()\n",
+            ),
         }
         for keyword, (language, code) in snippets.items():
             if keyword in lowered:
+                note = (
+                    "Enable the **Message Content** intent in the Discord developer portal and set "
+                    "`DISCORD_TOKEN` before running it.\n\n"
+                    if keyword == "discord bot"
+                    else ""
+                )
                 return (
-                    f"Here is a working demo implementation. The zero-key engine selected a known pattern "
-                    f"for **{keyword}**; review it and add tests for your exact constraints.\n\n"
+                    f"Here's a working demo implementation for **{keyword}**. {note}"
                     f"```{language}\n{code}```\n\n"
                     "A full model adds requirement analysis, alternative designs, and project-specific tests."
                 )
         return (
-            "I can take this coding task, but the demo engine cannot generate trustworthy arbitrary code. "
-            "Here is a safe way to proceed:\n\n"
-            "1. Describe the expected input, output, and constraints.\n"
-            "2. Paste the failing code and the exact error.\n"
-            "3. Add a provider key so I can generate, validate, and repair the implementation with the coding model.\n\n"
-            "AETHER's full pipeline performs syntax, security, edge-case, and performance checks before returning code."
+            "The zero-key demo engine can't generate reliable arbitrary code, so I won't fake it. "
+            "Paste the failing code and the exact error, or add a provider key, and I'll produce the "
+            "implementation, tests, and a root-cause fix. I can also generate known demo snippets for "
+            "Fibonacci, factorial, palindrome, reverse, FizzBuzz, and a minimal Discord bot."
         )
 
     def _file_analysis_demo(self, prompt: str) -> str:
