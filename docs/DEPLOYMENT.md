@@ -78,8 +78,10 @@ persistent disk.
   card).
 - [Supabase](https://supabase.com/dashboard) account (free).
 - Node.js 20+ (22 recommended) and Python 3.12+ for local builds.
-- Optional: an AI provider key (DeepSeek, OpenAI, Groq, OpenRouter) and search
-  / voice keys. Without them the app runs in clearly labelled demo mode.
+- Optional: an AI provider key (OpenRouter, OpenAI, DeepSeek, or Groq) and
+  search / voice keys. With a valid key the API uses the strongest available
+  model automatically; without one it runs in clearly labelled local fallback
+  mode.
 
 Generate the secrets now — you will paste them into Render and Cloudflare:
 
@@ -212,10 +214,19 @@ curl https://<render-service-url>/api/v1/health/ready
 The first request after 15 minutes of inactivity can take about 50 seconds while
 the free instance wakes. Open `/health` once before a demo to warm it up.
 
-Optional: add `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, or
-`OPENROUTER_API_KEY` to leave demo mode. Add `TAVILY_API_KEY` /
-`BRAVE_SEARCH_API_KEY` / `SERPER_API_KEY` for live research, and
-`DEEPGRAM_API_KEY` / `ELEVENLABS_API_KEY` for server-side voice fallbacks.
+Optional: add `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, or
+`GROQ_API_KEY` to enable live inference. The default quality chain is Claude
+Sonnet via OpenRouter → GPT-4.1 → Gemini via OpenRouter → DeepSeek V4.1 →
+Groq, with automatic cross-provider fallback. Confirm the detected provider:
+
+```bash
+curl https://<render-service-url>/api/v1/health/providers
+```
+
+A valid key reports `"demo_mode": false` and a non-empty `selected` map. Add
+`TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SERPER_API_KEY` for dedicated live
+research, and `DEEPGRAM_API_KEY` / `ELEVENLABS_API_KEY` for server-side voice
+fallbacks.
 
 ---
 
@@ -331,8 +342,9 @@ curl -I https://<worker-url>
 Then in the browser:
 
 1. Open the Worker URL and register a new account.
-2. Send a chat message. You should see streamed tokens (or a clearly labelled
-   demo response if no AI key is configured).
+2. Send a chat message. With a valid AI key you should see streamed tokens from
+   the selected real model; otherwise you get a clearly labelled local fallback
+   response.
 3. Open **Files** and upload a PDF/text file. Confirm the row in
    `files` and the object in the Supabase `aether-files` bucket.
 4. Create a conversation, memory, and task; reload the page to confirm they
@@ -511,7 +523,7 @@ Render Free is the recommended API target and is configured manually; the old
 | Browser CORS error | Direct cross-origin call and origin not listed | Use `/api/proxy` or add the exact Worker origin to `CORS_ORIGINS` |
 | Uploads fail | No persistent disk or Supabase not configured | Set `STORAGE_BACKEND=supabase` and the three `SUPABASE_*` values |
 | Supabase storage upload `403` | Wrong key or public/private bucket mismatch | Use the service-role key and a private bucket |
-| Answers say "demo mode" | No AI provider configured | Add `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / etc. |
+| Answers use the local fallback | No valid AI provider configured | Add `OPENROUTER_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `GROQ_API_KEY`, then check `/api/v1/health/providers` |
 | Research returns no sources | No search provider configured | Add Tavily/Brave/Serper/SearXNG |
 | `429` responses | Rate limit reached | Wait for `Retry-After` or raise limits |
 | Render build fails | Wrong Dockerfile path/root directory | Use root directory `apps/api` and Dockerfile `Dockerfile` |
@@ -527,7 +539,7 @@ Render Free is the recommended API target and is configured manually; the old
 | Cloudflare Workers | 100,000 requests/day, 10 ms CPU/request, 128 MB | Fine for a demo/small deployment; heavy SSR can hit the CPU cap |
 | Render Free | 750 instance hours/month, 512 MB RAM, 0.1 CPU | One API service fits; it sleeps after 15 min idle and wakes in ~50 s |
 | Supabase Free | 500 MB DB, 1 GB storage, 5 GB egress, 2 projects | Enough for conversations, files, and memories; pauses after 1 week idle |
-| AI providers | Pay-per-use (optional) | AETHER runs in demo mode with no keys; add a key for real inference |
+| AI providers | Pay-per-use (optional) | AETHER runs in labelled local fallback mode with no valid key; add one key for real inference |
 
 Total monthly cost for the stack: **$0** (excluding optional AI/search/voice
 provider usage).

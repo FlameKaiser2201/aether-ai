@@ -216,7 +216,9 @@ systems, and keep provider keys scoped and spend-limited.
 - Conversations can be exported as Markdown or JSON.
 - AETHER does not use customer data to train models. Review each AI provider's
   retention and training policy before sending sensitive data.
-- In demo mode, responses are generated locally and no data leaves the API.
+- In local fallback mode, responses are generated locally and no data leaves
+  the API. `/api/v1/health/providers` reports provider IDs, base URLs and model
+  IDs only; it never returns key values.
 
 ---
 
@@ -228,8 +230,9 @@ systems, and keep provider keys scoped and spend-limited.
   permissions. Server STT/TTS require provider keys.
 - Local storage is not durable on serverless platforms. Use Supabase Storage.
 - There is no built-in malware scanner; add one for untrusted uploads at scale.
-- Demo mode is intentionally limited and clearly labelled. It is not a
-  substitute for a configured model.
+- Local fallback mode is intentionally limited and clearly labelled. It is not
+  a substitute for a configured model, and it is disabled automatically when a
+  valid provider key exists.
 - CSP allows `'unsafe-inline'` and `'unsafe-eval'` for Next.js compatibility.
   Tighten with nonces/hashes if your threat model requires it.
 

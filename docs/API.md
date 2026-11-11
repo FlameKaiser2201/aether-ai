@@ -92,8 +92,14 @@ Request:
 ```
 
 `mode` is one of `auto`, `general`, `study`, `coding`, `interview`, `research`,
-`voice`. `file_ids` accepts up to 8 uploaded file IDs. `web_search: null` uses
-the user's preference; `true` forces research.
+`voice`. `file_ids` accepts up to 8 uploaded file IDs.
+
+`web_search` controls research explicitly:
+
+- `null` or omitted: uses the user's preference and automatically searches when
+  the request needs current information (news, releases, prices, versions).
+- `true`: always searches before answering.
+- `false`: never searches for this turn.
 
 Response: `text/event-stream`. Each event has a named type and JSON `data`.
 A comment line `: ping` is sent every 15 seconds as a keepalive.
@@ -335,7 +341,7 @@ provider is not configured.
 | --- | --- | --- | --- |
 | `GET` | `/settings` | — | preferences, capabilities, model catalog, limits |
 | `PATCH` | `/settings` | partial `UserPreferences` | `{preferences}` |
-| `GET` | `/models` | — | routing strategy, demo mode, models, providers |
+| `GET` | `/models` | — | routing strategy, `demo_mode` (true only when no valid provider), models, providers |
 
 Preferences include language (`auto`, `en`, `hi`, `hinglish`), response style,
 routing strategy, voice name/rate/pitch, auto-speak, continuous listening,
@@ -350,7 +356,35 @@ preferred code language and whether to show routing metadata.
 | --- | --- | --- |
 | `GET` | `/health` (root) | `{status, version}` — liveness |
 | `GET` | `/api/v1/health` | `{status, name, version, demo_mode}` |
+| `GET` | `/api/v1/health/providers` | detected providers, selected model per tier, priority and validation issues; never includes API keys |
 | `GET` | `/api/v1/health/ready` | database, Redis, storage and provider readiness; `503` if the database is unreachable |
+
+`/health/providers` is the deployment verification endpoint after adding a key:
+
+```json
+{
+  "demo_mode": false,
+  "priority": ["openrouter", "openai"],
+  "providers": {
+    "openrouter": {
+      "label": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "models": {
+        "fast": "google/gemini-3.8-flash",
+        "balanced": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  },
+  "selected": {
+    "balanced": "openrouter/anthropic/claude-sonnet-5.5",
+    "coding": "openrouter/anthropic/claude-sonnet-5.5"
+  },
+  "validation_issues": []
+}
+```
+
+`demo_mode` is `false` whenever at least one structurally valid provider is
+registered. A placeholder key does not count as valid.
 
 ---
 

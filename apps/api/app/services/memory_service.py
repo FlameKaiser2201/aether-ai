@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.execution import complete_with_fallback
 from app.ai.prompts import memory_extraction_prompt
 from app.ai.registry import registry
 from app.ai.types import ChatMessage, GenerationConfig
@@ -73,8 +74,19 @@ def _recency_score(value: datetime | None) -> float:
 
 
 async def retrieve_memories(
-    db: AsyncSession, user_id: str, query: str, limit: int | None = None
+    db: AsyncSession,
+    user_id: str,
+    query: str,
+    limit: int | None = None,
+    *,
+    context: str = "",
 ) -> list[Memory]:
+    """Retrieve memories relevant to the current turn and conversation.
+
+    ``context`` is the rolling summary (or recent topic text). Including it
+    keeps follow-up questions connected to earlier turns even when the current
+    message is short, such as "what about the second one?".
+    """
     limit = limit or settings.memory_retrieval_limit
     result = await db.scalars(
         select(Memory).where(Memory.user_id == user_id).order_by(Memory.updated_at.desc()).limit(500)
@@ -82,20 +94,60 @@ async def retrieve_memories(
     memories = list(result)
     if not memories:
         return []
+
+    search_text = f"{query} {context}".strip()
     query_embedding: list[float] = []
-    if settings.memory_embeddings and any(m.embedding for m in memories):
-        vectors = await _embed([query])
+    if (
+        settings.memory_embeddings
+        and search_text
+        and any(m.embedding for m in memories)
+    ):
+        vectors = await _embed([search_text])
         query_embedding = vectors[0] if vectors else []
 
     scored: list[tuple[float, Memory]] = []
     for memory in memories:
         text = f"{memory.key} {memory.value}"
-        score = lexical_score(query, text) * 2.0 + memory.confidence * 0.35 + _recency_score(memory.updated_at) * 0.25
+        score = (
+            lexical_score(search_text, text) * 2.0
+            + memory.confidence * 0.35
+            + _recency_score(memory.updated_at) * 0.25
+        )
         if query_embedding and memory.embedding:
             score += _cosine(query_embedding, memory.embedding) * 1.5
         scored.append((score, memory))
     scored.sort(key=lambda item: item[0], reverse=True)
-    selected = [memory for score, memory in scored[:limit] if score > 0.05] or [m for _, m in scored[:2]]
+    selected = [
+        memory for score, memory in scored[:limit] if score > 0.05
+    ] or [m for _, m in scored[:2]]
+
+    # High-confidence identity and preference memories are useful for
+    # continuity even when the current wording has little lexical overlap.
+    pinned = sorted(
+        (
+            memory
+            for memory in memories
+            if memory.category in {"identity", "preference"}
+            and memory.confidence >= 0.75
+        ),
+        key=lambda memory: (
+            memory.confidence,
+            _recency_score(memory.updated_at),
+        ),
+        reverse=True,
+    )[: max(2, limit // 3)]
+
+    merged: list[Memory] = []
+    seen: set[str] = set()
+    for memory in [*pinned, *selected]:
+        if memory.id in seen:
+            continue
+        seen.add(memory.id)
+        merged.append(memory)
+        if len(merged) >= limit:
+            break
+    selected = merged or selected
+
     if selected:
         await db.execute(
             update(Memory)
@@ -253,10 +305,10 @@ async def extract_and_store(
     if not enabled or not user_text.strip():
         return 0
     candidates: list[dict[str, Any]] = []
-    if not settings.effective_demo_mode:
-        decision = registry.route(task_type="general", tier="fast")
+    if registry.has_real_provider:
         try:
-            result = await decision.provider.complete(
+            result, _ = await complete_with_fallback(
+                registry.candidates(task_type="general", tier="fast"),
                 [
                     ChatMessage(role="system", content="You extract durable user memories. Return strict JSON."),
                     ChatMessage(
@@ -266,7 +318,6 @@ async def extract_and_store(
                         ),
                     ),
                 ],
-                decision.model,
                 GenerationConfig(temperature=0.1, max_tokens=700),
             )
             parsed = parse_json_object(result.text, {"memories": []})

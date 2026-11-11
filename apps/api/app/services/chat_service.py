@@ -22,7 +22,12 @@ from app.ai.context import Source, build_messages, history_to_prompt
 from app.ai.execution import complete_with_fallback, stream_with_fallback
 from app.ai.prompts import build_system_prompt, summary_prompt
 from app.ai.registry import registry
-from app.ai.router import ClassificationInput, classify, plan_tasks
+from app.ai.router import (
+    ClassificationInput,
+    classify,
+    needs_web_search,
+    plan_tasks,
+)
 from app.ai.types import ChatMessage, GenerationConfig, Usage
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -166,7 +171,10 @@ async def _post_turn(
                     enabled=True,
                 )
                 await db.commit()
-            if conversation_count >= 24 and conversation_count % 8 == 0:
+            if (
+                conversation_count >= settings.summary_start_after
+                and conversation_count % max(1, settings.summary_every_messages) == 0
+            ):
                 conversation = await db.get(Conversation, conversation_id)
                 if conversation:
                     messages = list(
@@ -344,11 +352,19 @@ async def stream_chat(
             )
             return
 
-        use_web = (
-            payload.web_search
-            if payload.web_search is not None
-            else (preferences.web_search_default or decision.task_type == "research")
-        )
+        if payload.web_search is True:
+            use_web = True
+        elif payload.web_search is False:
+            # Explicit opt-out from an API client.
+            use_web = False
+        else:
+            use_web = preferences.web_search_default or (
+                settings.web_search_auto
+                and (
+                    payload.mode == "research"
+                    or needs_web_search(payload.message)
+                )
+            )
         sources: list[Source] = []
         if use_web:
             yield ("status", {"stage": "researching", "message": "Searching the web and reading sources…"})
@@ -385,7 +401,12 @@ async def stream_chat(
         if files:
             yield ("status", {"stage": "reading_files", "message": "Reading attached documents…"})
         excerpts = await file_service.file_excerpts(db, user.id, payload.file_ids, payload.message)
-        memories = await memory_service.retrieve_memories(db, user.id, payload.message)
+        memories = await memory_service.retrieve_memories(
+            db,
+            user.id,
+            payload.message,
+            context=conversation.summary or "",
+        )
         memories_text = format_memories(memories)
         system_prompt = build_system_prompt(
             preferences=preferences,
@@ -404,7 +425,7 @@ async def stream_chat(
                     Message.id != user_message.id,
                 )
                 .order_by(Message.created_at.desc())
-                .limit(40)
+                .limit(settings.history_turn_limit)
             )
         )
         history.reverse()
@@ -442,7 +463,7 @@ async def stream_chat(
             temperature=settings.temperature,
             max_tokens=settings.max_output_tokens,
         )
-        yield ("status", {"stage": "generating", "message": "Thinking…"})
+        yield ("status", {"stage": "generating", "message": "Working on it…"})
 
         full_text = ""
         finish_reason = None

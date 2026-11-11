@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from app.ai.capability_guard import check_request, limitation_markdown
-from app.ai.router import ClassificationInput, classify
+from app.ai.router import ClassificationInput, classify, needs_web_search
+from app.services import chat_service
+from app.services.search_service import ResearchBundle, WebResult
 
 
 def test_capability_guard_blocks_email_and_allows_study():
@@ -19,6 +21,69 @@ def test_classifier_routes_common_tasks():
     assert classify(ClassificationInput(message="write a system design for a URL shortener")).task_type == "reasoning"
     assert classify(ClassificationInput(message="Tell me about AI")).tier == "balanced"
     assert classify(ClassificationInput(message="hello")).tier == "fast"
+
+
+def test_current_information_detection():
+    assert needs_web_search("What is the latest AI model release?")
+    assert needs_web_search("What is the newest Python version?")
+    assert needs_web_search("Who won the election?")
+    assert needs_web_search("What is the current price of Bitcoin?")
+    assert not needs_web_search("Explain photosynthesis for my biology exam")
+    assert not needs_web_search("Update this function to handle empty input")
+    assert not needs_web_search("Write a research plan for my essay")
+
+
+def _fake_research(query: str, fetch_pages: bool = True) -> ResearchBundle:
+    return ResearchBundle(
+        query=query,
+        provider="test",
+        results=[
+            WebResult(
+                index=1,
+                title="Live source",
+                url="https://example.com/live",
+                snippet="A current fact.",
+                content="A current fact with detail.",
+            )
+        ],
+    )
+
+
+def test_chat_auto_searches_for_current_information(client, auth_headers, monkeypatch):
+    calls: list[str] = []
+
+    async def fake_search(query: str, fetch_pages: bool = True) -> ResearchBundle:
+        calls.append(query)
+        return _fake_research(query, fetch_pages)
+
+    monkeypatch.setattr(chat_service.search_service, "search", fake_search)
+    response = client.post(
+        "/api/v1/chat",
+        headers=auth_headers,
+        json={"message": "What is the latest AI news?"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert calls == ["What is the latest AI news?"]
+    assert payload["citations"][0]["url"] == "https://example.com/live"
+
+
+def test_chat_respects_explicit_search_opt_out(client, auth_headers, monkeypatch):
+    calls: list[str] = []
+
+    async def fake_search(query: str, fetch_pages: bool = True) -> ResearchBundle:
+        calls.append(query)
+        return _fake_research(query, fetch_pages)
+
+    monkeypatch.setattr(chat_service.search_service, "search", fake_search)
+    response = client.post(
+        "/api/v1/chat",
+        headers=auth_headers,
+        json={"message": "What is the latest AI news?", "web_search": False},
+    )
+    assert response.status_code == 200, response.text
+    assert calls == []
+    assert response.json()["citations"] == []
 
 
 def test_chat_persists_conversation_and_returns_meta(client, auth_headers):

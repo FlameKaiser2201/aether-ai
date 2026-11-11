@@ -305,9 +305,10 @@ export function SettingsView() {
         <div className="mt-5 flex items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.04] px-3.5 py-3 text-[11px] leading-5 text-amber-100/80">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Demo mode is active. AETHER runs without external provider keys and
-            returns clearly-labelled illustrative answers. Configure a provider
-            on the API to unlock live models.
+            No valid model provider is configured. AETHER is using a
+            clearly-labelled local fallback. Add OPENROUTER_API_KEY,
+            OPENAI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY to the API to use
+            live models automatically.
           </span>
         </div>
       ) : null}
@@ -924,41 +925,43 @@ export function SettingsView() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Demo banner</CardTitle>
-                <CardDescription>
-                  Control the demo-mode notice shown in chat.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SettingRow
-                  title="Show demo banner"
-                  description="Display a reminder when AETHER is running without external model keys."
-                >
-                  <Switch
-                    checked={!preferences.demo_banner_dismissed}
-                    onCheckedChange={(value) =>
-                      setPref("demo_banner_dismissed", !value)
-                    }
-                  />
-                </SettingRow>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    variant="aurora"
-                    onClick={() => void savePreferences()}
-                    disabled={savingPreferences}
+            {capabilities?.demo_mode ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Local fallback banner</CardTitle>
+                  <CardDescription>
+                    Control the fallback notice shown in chat.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SettingRow
+                    title="Show fallback banner"
+                    description="Display a reminder when AETHER is running without a valid model provider."
                   >
-                    {savingPreferences ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Save
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                    <Switch
+                      checked={!preferences.demo_banner_dismissed}
+                      onCheckedChange={(value) =>
+                        setPref("demo_banner_dismissed", !value)
+                      }
+                    />
+                  </SettingRow>
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="aurora"
+                      onClick={() => void savePreferences()}
+                      disabled={savingPreferences}
+                    >
+                      {savingPreferences ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
           </div>
         </TabsContent>
 

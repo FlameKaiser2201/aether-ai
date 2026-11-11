@@ -94,16 +94,26 @@ from the placeholder. `API_URL` is the API's own Render URL.
 
 Optional keys:
 
-- AI: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`,
-  `GROQ_API_KEY`, or `OLLAMA_ENABLED=true`. Providers are tried in that order;
-  override with `PROVIDER_PRIORITY`. If one fails, the next configured provider
-  is used automatically.
+- AI: add at least one of `OPENROUTER_API_KEY`, `OPENAI_API_KEY`,
+  `DEEPSEEK_API_KEY`, or `GROQ_API_KEY`. The default quality chain is Claude
+  Sonnet via OpenRouter → GPT-4.1 → Gemini via OpenRouter → DeepSeek V4.1 →
+  Groq. Every configured provider remains available as a fallback, and a
+  failure moves to the next candidate automatically. Override provider order
+  with `PROVIDER_PRIORITY`; override model IDs with the per-provider
+  `*_FAST_MODEL`, `*_BALANCED_MODEL`, `*_REASONING_MODEL` and `*_CODING_MODEL`
+  variables.
 - Research: `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `SERPER_API_KEY`.
+  DuckDuckGo HTML search works without a key.
 - Server voice fallbacks: `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`.
 
-Without an AI key the API starts in clearly labelled demo mode; chat streaming,
-memory, tasks, files, and browser voice still work. `DEMO_MODE=true` never
-overrides a configured provider key.
+Add the key in **Environment**, save, and let Render redeploy. No other switch
+is needed: startup detects and validates the key, selects the strongest
+available model, and disables the local fallback automatically. Invalid or
+placeholder keys are skipped with a warning. `DEMO_MODE=true` never overrides a
+valid provider key.
+
+Without a valid AI key the API starts in clearly labelled local fallback mode;
+chat streaming, memory, tasks, files, and browser voice still work.
 
 ## 3. Deploy and verify
 
@@ -112,10 +122,17 @@ Render builds automatically on every push to `main`. You can also click
 
 ```bash
 curl https://<render-service-url>/health
-# {"status":"ok","version":"1.0.0"}
+# {"status":"ok","name":"AETHER","version":"1.0.0","demo_mode":false}
 
 curl https://<render-service-url>/api/v1/health/ready
+
+# Confirm the detected provider and selected models. Never returns key values.
+curl https://<render-service-url>/api/v1/health/providers
 ```
+
+With a valid key, `/api/v1/health/providers` should report `"demo_mode": false`,
+a non-empty `priority`, a `selected` map, and no validation issues. Startup logs
+also list each detected provider and its model IDs.
 
 The container command waits for Supabase, runs `alembic upgrade head`, and then
 starts Uvicorn on `$PORT` (8000). The migration path reuses the API's

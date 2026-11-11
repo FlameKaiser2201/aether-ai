@@ -155,7 +155,11 @@ export function Composer({
               variant="ghost"
               size="icon-sm"
               onClick={() => onWebSearchChange(!webSearch)}
-              title={webSearch ? "Web search is on" : "Web search is off"}
+              title={
+                webSearch
+                  ? "Web search: always on"
+                  : "Web search: auto — used when current information is needed"
+              }
               aria-label="Toggle web search"
               className={cn(
                 webSearch && "bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/15",
@@ -229,10 +233,13 @@ export function Composer({
           <p className="text-[9px] text-slate-600">
             {webSearch ? (
               <span className="inline-flex items-center gap-1 text-cyan-300/70">
-                <Globe2 className="h-2.5 w-2.5" /> web research on
+                <Globe2 className="h-2.5 w-2.5" /> web research forced
               </span>
             ) : (
-              "Shift + Enter for a new line"
+              <span className="inline-flex items-center gap-1">
+                <Globe2 className="h-2.5 w-2.5" /> web research auto · Shift +
+                Enter for a new line
+              </span>
             )}
           </p>
         </div>

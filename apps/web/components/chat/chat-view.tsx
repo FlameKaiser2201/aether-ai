@@ -274,7 +274,7 @@ export function ChatView() {
     setAttachments([]);
     setStreaming(true);
     streamingRef.current = true;
-    setStatus("Routing your request…");
+    setStatus("Working on it…");
     stickToBottomRef.current = true;
 
     const controller = new AbortController();
@@ -289,7 +289,9 @@ export function ChatView() {
           conversation_id: conversationId,
           mode,
           file_ids: requestAttachments.map((file) => file.id),
-          web_search: webSearch,
+          // Omit the field when the toggle is off so the API can auto-search
+          // for current-information questions. `true` forces a search.
+          web_search: webSearch ? true : undefined,
         },
         {
           onMeta: (meta) => {
@@ -745,10 +747,10 @@ export function ChatView() {
               <div className="flex flex-1 items-start gap-2 rounded-xl border border-amber-400/15 bg-amber-400/[0.05] px-3 py-2 text-[10px] leading-4 text-amber-100/80">
                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
-                  Demo mode is on — responses are illustrative until a provider
-                  key is configured.{" "}
+                  No live model provider is configured — responses come from the
+                  local fallback until a key is added.{" "}
                   <Link href="/settings" className="underline hover:text-amber-50">
-                    Add a model
+                    View providers
                   </Link>
                 </span>
               </div>

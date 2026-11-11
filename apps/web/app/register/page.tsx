@@ -13,7 +13,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       title="Create your workspace."
-      subtitle="Voice-first study, code, interviews, research and memory. Demo mode works without external API keys."
+      subtitle="Voice-first study, code, interviews, research and memory. Uses your configured model provider automatically."
       footer={
         <>
           Already have an account?{" "}

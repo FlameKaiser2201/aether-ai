@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     brave_search_api_key: str = ""
     serper_api_key: str = ""
     searxng_url: str = ""
+    web_search_auto: bool = True
     search_cache_seconds: int = 1800
     search_max_results: int = 6
     search_fetch_pages: int = 3
@@ -151,6 +152,9 @@ class Settings(BaseSettings):
     memory_embeddings: bool = True
     max_memories_per_user: int = 500
     memory_retrieval_limit: int = 8
+    history_turn_limit: int = 60
+    summary_start_after: int = 16
+    summary_every_messages: int = 6
 
     # --- derived ---
     @field_validator("database_url", mode="before")

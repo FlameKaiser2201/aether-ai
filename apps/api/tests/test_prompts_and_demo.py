@@ -29,11 +29,24 @@ def test_system_prompt_respects_response_style():
     assert "Be thorough and specific" in _prompt(response_style="detailed")
 
 
+def test_system_prompt_prioritises_natural_conversation_and_continuity():
+    prompt = _prompt()
+    assert "## Natural conversation" in prompt
+    assert "Never use canned openers" in prompt
+    assert "## Continuity and memory" in prompt
+    assert "Do not repeat information you already gave" in prompt
+    assert "Resolve references such as" in prompt
+    assert "## Current information" in prompt
+    assert "Never invent freshness or a source" in prompt
+
+
 def test_demo_fallback_answers_without_a_plan():
     response = DemoProvider()._compose("What is the capital of France?")
     assert "structured first pass" not in response.lower()
     assert "**plan**" not in response.lower()
-    assert "zero-key demo engine" in response
+    assert "zero-key" not in response.lower()
+    assert "live model provider" in response
+    assert "OPENROUTER_API_KEY" in response
 
 
 def test_demo_answers_operating_system_questions_directly():

@@ -65,7 +65,7 @@ DEMO_KNOWLEDGE: list[tuple[re.Pattern[str], str]] = [
 
 class DemoProvider(ChatProvider):
     id = "demo"
-    label = "AETHER demo engine"
+    label = "AETHER local fallback"
     demo = True
     models = {"fast": "demo-local", "balanced": "demo-local", "reasoning": "demo-local", "coding": "demo-local"}
     capabilities = ProviderCapabilities(streaming=True)
@@ -105,8 +105,10 @@ class DemoProvider(ChatProvider):
         if GREETING_RE.match(text):
             return (
                 "Hey — I'm AETHER. I can help you study, write and review code, prepare for interviews, "
-                "analyze documents, and research topics. This instance is in zero-key demo mode, so I'm "
-                "running a small local engine; add a provider key for full model quality. What are you working on?"
+                "analyze documents, and research topics. This deployment doesn't have a live model provider "
+                "configured yet, so I'm using a small local fallback engine. Add OPENROUTER_API_KEY, "
+                "OPENAI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY to the API for full model quality. "
+                "What are you working on?"
             )
 
         if "return only valid json" in lowered:
@@ -154,11 +156,11 @@ class DemoProvider(ChatProvider):
             )
 
         return (
-            f"I can help with “{text[:160]}”, but this instance is running the zero-key demo engine, so I "
-            "can't produce a reliable answer to arbitrary prompts yet. Add one provider key "
-            "(DEEPSEEK_API_KEY, OPENAI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY) and ask again. "
-            "I can still generate study sets, review pasted code, analyze documents, manage tasks and "
-            "memory, and handle browser voice right now."
+            f"I can help with “{text[:160]}”, but this deployment doesn't have a live model provider "
+            "configured yet, so I can't produce a reliable answer to arbitrary prompts. Add one of "
+            "OPENROUTER_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY to the API and ask "
+            "again. I can still generate study sets, review pasted code, analyze documents, manage tasks "
+            "and memory, and handle browser voice right now."
         )
 
     @staticmethod
@@ -357,7 +359,7 @@ class DemoProvider(ChatProvider):
                 + "#### Walkthrough\n"
                 + "\n".join(f"- {item}" for item in flow)
                 + "\n- Review each branch for empty input, malformed input, and error paths.\n\n"
-                "The demo engine can describe structure mechanically. Add a provider key for a semantic, "
+                "The local fallback engine can describe structure mechanically. Configure a live model provider for a semantic, "
                 "line-by-line explanation of intent and edge cases."
             )
 
@@ -373,7 +375,7 @@ class DemoProvider(ChatProvider):
                 + findings
                 + "#### Review checklist\n"
                 + "\n".join(f"- {item}" for item in checklist)
-                + "\n\nAdd a provider key for a line-level review with a concrete patch."
+                + "\n\nConfigure a live model provider for a line-level review with a concrete patch."
             )
 
         if action == "refactor":
@@ -383,8 +385,8 @@ class DemoProvider(ChatProvider):
                 + findings
                 + "#### Safe formatting pass\n"
                 "```" + (language if language != "text" else "") + "\n" + cleaned + "```\n\n"
-                "Only whitespace normalization was applied. The demo engine will not invent a semantic "
-                "refactor without a model provider. Add a provider key for a behavior-preserving rewrite."
+                "Only whitespace normalization was applied. The local fallback engine will not invent a semantic "
+                "refactor without a model provider. Configure a live model provider for a behavior-preserving rewrite."
             )
 
         return (
@@ -394,7 +396,7 @@ class DemoProvider(ChatProvider):
             "- Reproduce with the smallest input that fails.\n"
             "- Read the first traceback line and the deepest frame in your own code.\n"
             "- Add a regression test that fails before the fix and passes after it.\n\n"
-            "Add a provider key for a root-cause diagnosis and a corrected full function."
+            "Configure a live model provider for a root-cause diagnosis and a corrected full function."
         )
 
     def _coding_chat_demo(self, prompt: str) -> str:
@@ -493,8 +495,8 @@ class DemoProvider(ChatProvider):
                     "A full model adds requirement analysis, alternative designs, and project-specific tests."
                 )
         return (
-            "The zero-key demo engine can't generate reliable arbitrary code, so I won't fake it. "
-            "Paste the failing code and the exact error, or add a provider key, and I'll produce the "
+            "The local fallback engine can't generate reliable arbitrary code, so I won't fake it. "
+            "Paste the failing code and the exact error, or configure a live model provider, and I'll produce the "
             "implementation, tests, and a root-cause fix. I can also generate known demo snippets for "
             "Fibonacci, factorial, palindrome, reverse, FizzBuzz, and a minimal Discord bot."
         )
@@ -530,7 +532,7 @@ class DemoProvider(ChatProvider):
                     "numbers": numbers,
                     "word_count": len(words),
                     "demo": True,
-                    "note": "Extractive demo output. Configure a model provider for schema-aware extraction.",
+                    "note": "Extractive demo output. Configure a live model provider for schema-aware extraction.",
                 },
                 ensure_ascii=False,
             )
@@ -541,7 +543,7 @@ class DemoProvider(ChatProvider):
             f"**Key points**\n" + "\n".join(f"- {item[:280]}" for item in bullets) + "\n\n"
             f"**Document stats:** {len(words)} words · {len(body.splitlines())} lines\n"
             f"{number_line}\n"
-            "> Extractive demo analysis. Add a model provider for deeper synthesis, risk analysis, "
+            "> Extractive demo analysis. Configure a live model provider for deeper synthesis, risk analysis, "
             "and schema-aware extraction."
         )
 
@@ -586,7 +588,7 @@ class DemoProvider(ChatProvider):
                     "cards": [
                         {
                             "front": f"Core idea #{index + 1} of {topic}",
-                            "back": "Write the definition, one example, and one common mistake. Add a provider key for a complete card.",
+                            "back": "Write the definition, one example, and one common mistake. Configure a live model provider for a complete card.",
                             "tags": ["demo", topic[:30]],
                         }
                         for index in range(count)
@@ -608,7 +610,7 @@ class DemoProvider(ChatProvider):
                                 "None of the above",
                             ],
                             "correct_index": 0,
-                            "explanation": "Demo mode generates a template. Add a model provider for topic-specific questions.",
+                            "explanation": "Local fallback mode generates a template. Configure a live model provider for topic-specific questions.",
                             "difficulty": "medium",
                         }
                         for _ in range(count)
@@ -673,13 +675,13 @@ class DemoProvider(ChatProvider):
             return json.dumps(
                 {
                     "title": topic,
-                    "overview": f"A structured starting point for {topic}. Demo mode is active.",
+                    "overview": f"A structured starting point for {topic}. Local fallback mode is active.",
                     "sections": [
                         {"heading": "Core idea", "content": f"Define {topic} in one sentence.", "key_points": ["Definition", "Purpose"]},
                         {"heading": "How it works", "content": "Break the mechanism into 3–5 ordered steps.", "key_points": ["Inputs", "Process", "Outputs"]},
                         {"heading": "Worked example", "content": "Apply the concept to a small concrete case.", "key_points": ["Assumptions", "Steps", "Result"]},
                     ],
-                    "key_terms": [{"term": topic, "definition": "Add a model provider for a precise definition."}],
+                    "key_terms": [{"term": topic, "definition": "Configure a live model provider for a precise definition."}],
                     "common_mistakes": ["Memorizing without testing recall"],
                     "practice": ["Explain it aloud", "Solve one timed question"],
                     "demo": True,
@@ -688,11 +690,11 @@ class DemoProvider(ChatProvider):
         if '"tldr"' in prompt:
             return json.dumps(
                 {
-                    "tldr": f"A demo summary of {topic}. Add a model provider for source-specific analysis.",
+                    "tldr": f"A demo summary of {topic}. Configure a live model provider for source-specific analysis.",
                     "key_points": ["Define the concept", "Identify the mechanism", "Test with an example"],
-                    "details": "Demo mode returns a structured template rather than a full synthesis.",
+                    "details": "Local fallback mode returns a structured template rather than a full synthesis.",
                     "check_yourself": ["Can you explain it without notes?"],
                     "demo": True,
                 }
             )
-        return json.dumps({"result": "Demo mode could not build this artifact. Configure a model provider.", "demo": True})
+        return json.dumps({"result": "Local fallback mode could not build this artifact. Configure a live model provider.", "demo": True})

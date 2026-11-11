@@ -14,8 +14,10 @@ PostgreSQL data layer, a modular model-provider abstraction, and a Next.js 15
 glassmorphism interface with streaming chat, live voice and six focused studio
 workspaces.
 
-It runs with **zero API keys** in a clearly labelled offline demo mode, and
-switches to real providers as soon as credentials are configured.
+It runs without a provider key in a clearly labelled local fallback mode, and
+switches to the strongest available real model automatically as soon as a valid
+provider key is configured. A configured provider always wins; demo output is
+never used as a silent substitute.
 
 ---
 
@@ -43,19 +45,26 @@ switches to real providers as soon as credentials are configured.
 
 ### Intelligence layer
 - Provider abstraction for **OpenRouter**, **OpenAI**, **DeepSeek**, **Groq**,
-  custom gateways and **Ollama**, tried in that priority order by default.
-- Strongest-model selection per task, with automatic cross-provider fallback on
+  custom gateways and **Ollama**.
+- Default quality chain: **Claude Sonnet via OpenRouter → GPT-4.1 → Gemini via
+  OpenRouter → DeepSeek V4.1 → Groq**, with automatic cross-provider fallback on
   rate limits, timeouts, auth errors and outages.
-- Intelligent routing by task: simple → fast model, coding → coding model,
+- Startup detection and structural validation of every configured key, base URL
+  and model ID. Invalid or placeholder keys are skipped with a diagnostic.
+- Strongest-model selection per task: simple → fast model, coding → coding model,
   complex reasoning → reasoning model, vision → vision model.
 - Capability guard that recognises impossible or unsupported requests and
   explains the limitation instead of hallucinating.
 - Code guard that statically validates syntax, delimiters, placeholders,
   SQL/JSON structure, security smells and edge cases before returning generated
   code, with one automatic repair round.
-- Execution-first conversation: answers lead, plans are opt-in, and step-by-step
-  reasoning appears only when the user asks for it or the task genuinely needs it.
-- Honest demo provider so every feature remains explorable without keys.
+- Execution-first, natural conversation: answers lead, plans are opt-in, and
+  step-by-step reasoning appears only when the user asks for it or the task
+  genuinely needs it.
+- Automatic web search for current-information questions, with citations when a
+  search provider is available.
+- Labelled local fallback only when no valid provider exists. It is not
+  registered at all when a real provider key is present.
 
 ### Security and operations
 - Auth.js (NextAuth v5) JWT sessions on the web tier; FastAPI issues short-lived
@@ -104,19 +113,23 @@ The full design is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 | Task signal | Tier | Typical model |
 | --- | --- | --- |
-| Greeting, thanks, short small talk | `fast` | Gemini 3.8 Flash / GPT-4.1 mini |
-| Normal questions, study notes, explanations, research synthesis | `balanced` | Claude Sonnet 5.5 / GPT-4.1 / DeepSeek V4.1 |
-| System design, multi-step reasoning, interviews | `reasoning` | Claude Sonnet / GPT-4.1 |
-| Code generation, debugging, refactoring | `coding` | Claude Sonnet / GPT-4.1 |
-| Image understanding | `vision` | Claude Sonnet / GPT-4.1 |
+| Greeting, thanks, short small talk | `fast` | Gemini 3.8 Flash / GPT-4.1 mini / DeepSeek Flash |
+| Normal questions, study notes, explanations, research synthesis | `balanced` | Claude Sonnet 5.5 / GPT-4.1 / Gemini 3.8 Flash / DeepSeek V4.1 / Groq |
+| System design, multi-step reasoning, interviews | `reasoning` | Claude Sonnet 5.5 / GPT-4.1 / DeepSeek V4 Pro / Groq |
+| Code generation, debugging, refactoring | `coding` | Claude Sonnet 5.5 / GPT-4.1 / DeepSeek V4 Pro / Groq |
+| Image understanding | `vision` | Claude Sonnet 5.5 / GPT-4.1 |
 
-Provider priority is **OpenRouter → OpenAI → DeepSeek → Groq → custom → Ollama**.
-The router considers the user's `quality` / `cost` / `local` preference, provider
-availability and the requested mode. If the first provider fails, the next
-ranked provider is tried automatically. Streaming falls back before the first
-token; after that, the partial answer is kept instead of being restarted.
-Every chat response exposes the provider, model, tier and routing reason that
-actually produced it. Demo is used only when no real provider is configured.
+With the default `quality` strategy the router follows the product model order:
+**Claude Sonnet via OpenRouter → GPT-4.1 → Gemini via OpenRouter → DeepSeek
+V4.1 → Groq**. Every configured provider is still added as a deeper fallback, so
+an outage never strands the request. `PROVIDER_PRIORITY` switches to explicit
+provider-order routing, and the `cost` / `local` strategies use their own orders.
+
+If the first provider fails, the next ranked provider/model pair is tried
+automatically. Streaming falls back before the first token; after that, the
+partial answer is kept instead of being restarted. Every chat response exposes
+the provider, model, tier and routing reason that actually produced it. The
+local fallback is used only when no valid provider is configured.
 
 ---
 
@@ -190,7 +203,7 @@ its interactive docs at <http://localhost:8000/docs>.
 ### Option B — local development
 
 Prerequisites: Python 3.12+, Node.js 20+, and optionally PostgreSQL/Redis.
-For a zero-dependency demo, use SQLite and leave Redis empty.
+For a zero-dependency local setup, use SQLite and leave Redis empty.
 
 ```bash
 # 1. Environment
@@ -224,15 +237,64 @@ npm run dev
 The API reads `.env` from `apps/api` and falls back to the repository-root
 `.env`, so a single root file is enough for both services.
 
-### Demo mode
+### Connect a real provider
 
-If no AI provider is configured, AETHER automatically enters demo mode and
-labels every response. The demo provider can still demonstrate study sets, code
+Add at least one key to the API environment. The strongest configured model is
+selected automatically; no other switch is required.
+
+```text
+# Preferred: Claude Sonnet, with Gemini Flash as the fast OpenRouter model
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# Or: GPT-4.1 / GPT-4.1 mini
+OPENAI_API_KEY=sk-...
+
+# Or: DeepSeek V4.1
+DEEPSEEK_API_KEY=sk-...
+
+# Or: Groq
+GROQ_API_KEY=gsk_...
+```
+
+Then restart the API. Startup logs report every detected provider and model,
+and the diagnostic endpoint confirms the active selection without exposing
+keys:
+
+```bash
+curl http://localhost:8000/api/v1/health/providers
+```
+
+Expected result with one valid key:
+
+```json
+{
+  "demo_mode": false,
+  "priority": ["openrouter"],
+  "selected": {
+    "balanced": "openrouter/anthropic/claude-sonnet-5.5"
+  },
+  "validation_issues": []
+}
+```
+
+Providers are validated structurally at startup (key present, non-placeholder,
+absolute base URL, non-empty model IDs). A malformed provider is skipped with a
+warning instead of breaking the service. Connectivity is checked on the first
+request, and a failure moves to the next ranked provider automatically.
+
+Model IDs are configurable per tier with `OPENROUTER_*_MODEL`,
+`OPENAI_*_MODEL`, `DEEPSEEK_*_MODEL` and `GROQ_*_MODEL`. Override the default
+quality order with `PROVIDER_PRIORITY`, for example
+`PROVIDER_PRIORITY=openai,openrouter,deepseek,groq`.
+
+### Local fallback mode
+
+If no **valid** provider is configured, AETHER labels every response and uses
+the local fallback engine. It can still demonstrate study sets, code
 review/refactor/debug/explain, file analysis, interview scoring and chat
 streaming. Research explains that live search is unavailable rather than
-inventing sources. Set any provider key (or `OLLAMA_ENABLED=true`) to switch to
-real inference. Demo is a last resort: `DEMO_MODE=true` never overrides a
-configured provider key.
+inventing sources. Placeholder keys such as `your-api-key` do not count as a
+provider. `DEMO_MODE=true` never overrides a valid provider key.
 
 ---
 
@@ -247,11 +309,14 @@ important groups are:
 | `REDIS_URL` | Optional; empty uses in-process fallback |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_API_SECRET` | Backend signing secrets |
 | `AUTH_SECRET` | Auth.js session encryption secret |
-| `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | AI providers, tried in that order |
+| `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY` | AI providers; any valid key disables the local fallback |
 | `PROVIDER_PRIORITY` | Override the provider order |
+| `*_FAST_MODEL`, `*_BALANCED_MODEL`, `*_REASONING_MODEL`, `*_CODING_MODEL` | Per-provider model IDs |
 | `OLLAMA_ENABLED`, `OLLAMA_BASE_URL` | Self-hosted local models |
 | `ROUTING_STRATEGY` | `quality`, `cost` or `local` |
 | `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, `SERPER_API_KEY`, `SEARXNG_URL` | Web research |
+| `WEB_SEARCH_AUTO` | Auto-search current-information questions (default `true`) |
+| `HISTORY_TURN_LIMIT`, `SUMMARY_START_AFTER`, `SUMMARY_EVERY_MESSAGES` | Conversation context and rolling-summary cadence |
 | `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` | Server voice fallbacks |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | Durable file storage |
 | `SEED_DEMO`, `DEMO_EMAIL`, `DEMO_PASSWORD` | Local demo account |

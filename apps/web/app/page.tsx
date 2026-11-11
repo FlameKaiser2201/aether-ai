@@ -293,7 +293,7 @@ export default function LandingPage() {
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/80" />
-                Demo mode works with zero API keys
+                Live models, selected automatically
               </span>
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/80" />
@@ -558,7 +558,8 @@ export default function LandingPage() {
               </h2>
               <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-slate-400">
                 Create an account, open the voice assistant, and ask your first
-                question. Demo mode needs no external API keys.
+                question. AETHER selects the strongest configured model and keeps
+                the conversation moving from there.
               </p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                 <Button asChild variant="aurora" size="lg">

@@ -15,7 +15,13 @@ from app.ai.base import ChatProvider
 from app.ai.demo import DemoProvider
 from app.ai.ollama import OllamaProvider
 from app.ai.openai_compatible import OpenAICompatibleProvider
-from app.ai.types import ProviderCapabilities, RouteDecision
+from app.ai.provider_config import (
+    detect_provider_specs,
+    priority_issues,
+    validate_base_url,
+    validate_provider_specs,
+)
+from app.ai.types import RouteDecision
 from app.core.config import settings
 
 logger = logging.getLogger("aether.registry")
@@ -43,104 +49,114 @@ TIER_FALLBACKS = {
     "vision": ["vision", "balanced", "fast"],
 }
 
-MAX_CANDIDATES = 12
+# Product model priority for the default quality strategy:
+# Claude Sonnet -> GPT-4.1 -> Gemini via OpenRouter -> DeepSeek V4.1 -> Groq.
+# Each entry is (provider_id, model_tier). Providers that are not configured
+# are skipped, and the provider-order fallback below fills any remaining gaps.
+QUALITY_MODEL_CHAIN: dict[str, list[tuple[str, str]]] = {
+    "fast": [
+        ("openrouter", "fast"),
+        ("openai", "fast"),
+        ("deepseek", "fast"),
+        ("groq", "fast"),
+    ],
+    "balanced": [
+        ("openrouter", "balanced"),
+        ("openai", "balanced"),
+        ("openrouter", "fast"),
+        ("deepseek", "balanced"),
+        ("groq", "balanced"),
+    ],
+    "reasoning": [
+        ("openrouter", "reasoning"),
+        ("openai", "reasoning"),
+        ("openrouter", "fast"),
+        ("deepseek", "reasoning"),
+        ("groq", "reasoning"),
+    ],
+    "coding": [
+        ("openrouter", "coding"),
+        ("openai", "coding"),
+        ("openrouter", "fast"),
+        ("deepseek", "coding"),
+        ("groq", "coding"),
+    ],
+    "vision": [
+        ("openrouter", "vision"),
+        ("openai", "vision"),
+        ("deepseek", "vision"),
+    ],
+}
+
+MAX_CANDIDATES = 16
 
 
 class ModelRegistry:
     def __init__(self) -> None:
         self.providers: dict[str, ChatProvider] = {}
+        self.validation_issues: list[str] = []
         self._build()
 
     def _build(self) -> None:
-        # Construction order follows the quality priority so availability and
-        # catalog output are stable and easy to audit.
-        if settings.openrouter_api_key:
-            self.providers["openrouter"] = OpenAICompatibleProvider(
-                provider_id="openrouter",
-                label="OpenRouter",
-                base_url=settings.openrouter_base_url,
-                api_key=settings.openrouter_api_key,
-                models={
-                    "fast": settings.openrouter_fast_model,
-                    "balanced": settings.openrouter_balanced_model,
-                    "reasoning": settings.openrouter_reasoning_model,
-                    "coding": settings.openrouter_coding_model,
-                    "vision": settings.openrouter_vision_model,
-                },
-                capabilities=ProviderCapabilities(vision=True),
+        specs = detect_provider_specs()
+        self.validation_issues.extend(validate_provider_specs(specs))
+        self.validation_issues.extend(priority_issues())
+
+        for spec in specs:
+            issues = spec.issues()
+            if issues:
+                logger.warning(
+                    "Skipping %s provider: %s", spec.label, "; ".join(issues)
+                )
+                continue
+            self.providers[spec.id] = OpenAICompatibleProvider(
+                provider_id=spec.id,
+                label=spec.label,
+                base_url=spec.base_url,
+                api_key=spec.api_key,
+                models=spec.models,
+                capabilities=spec.capabilities,
+                extra_headers=spec.extra_headers,
             )
-        if settings.openai_api_key:
-            self.providers["openai"] = OpenAICompatibleProvider(
-                provider_id="openai",
-                label="OpenAI",
-                base_url=settings.openai_base_url,
-                api_key=settings.openai_api_key,
-                models={
-                    "fast": settings.openai_fast_model,
-                    "balanced": settings.openai_balanced_model,
-                    "reasoning": settings.openai_reasoning_model,
-                    "coding": settings.openai_coding_model,
-                    "vision": settings.openai_vision_model,
-                    "embedding": settings.openai_embedding_model,
-                },
-                capabilities=ProviderCapabilities(
-                    embeddings=True, vision=True, stt=True, tts=True
-                ),
-            )
-        if settings.deepseek_api_key:
-            self.providers["deepseek"] = OpenAICompatibleProvider(
-                provider_id="deepseek",
-                label="DeepSeek",
-                base_url=settings.deepseek_base_url,
-                api_key=settings.deepseek_api_key,
-                models={
-                    "fast": settings.deepseek_fast_model,
-                    "balanced": settings.deepseek_balanced_model,
-                    "reasoning": settings.deepseek_reasoning_model,
-                    "coding": settings.deepseek_coding_model,
-                    "vision": settings.deepseek_vision_model,
-                },
-                capabilities=ProviderCapabilities(vision=True),
-            )
-        if settings.groq_api_key:
-            self.providers["groq"] = OpenAICompatibleProvider(
-                provider_id="groq",
-                label="Groq",
-                base_url=settings.groq_base_url,
-                api_key=settings.groq_api_key,
-                models={
-                    "fast": settings.groq_fast_model,
-                    "balanced": settings.groq_balanced_model,
-                    "reasoning": settings.groq_reasoning_model,
-                    "coding": settings.groq_coding_model,
-                },
-            )
-        if settings.custom_ai_api_key and settings.custom_ai_base_url and settings.custom_ai_model:
-            self.providers["custom"] = OpenAICompatibleProvider(
-                provider_id="custom",
-                label="Custom OpenAI-compatible",
-                base_url=settings.custom_ai_base_url,
-                api_key=settings.custom_ai_api_key,
-                models={
-                    "fast": settings.custom_ai_model,
-                    "balanced": settings.custom_ai_model,
-                    "reasoning": settings.custom_ai_model,
-                    "coding": settings.custom_ai_model,
-                },
-            )
+
         if settings.ollama_enabled:
-            self.providers["ollama"] = OllamaProvider(
-                settings.ollama_base_url,
-                {
-                    "fast": settings.ollama_fast_model,
-                    "balanced": settings.ollama_balanced_model,
-                    "reasoning": settings.ollama_reasoning_model,
-                    "coding": settings.ollama_coding_model,
-                    "vision": settings.ollama_vision_model,
-                    "embedding": settings.ollama_fast_model,
-                },
-            )
-        self.providers["demo"] = DemoProvider()
+            ollama_issues = validate_base_url(settings.ollama_base_url)
+            if not any(
+                model.strip()
+                for model in (
+                    settings.ollama_fast_model,
+                    settings.ollama_balanced_model,
+                    settings.ollama_reasoning_model,
+                    settings.ollama_coding_model,
+                    settings.ollama_vision_model,
+                )
+            ):
+                ollama_issues.append("No model IDs are configured")
+            if ollama_issues:
+                self.validation_issues.extend(
+                    f"ollama: {issue}" for issue in ollama_issues
+                )
+                logger.warning(
+                    "Skipping Ollama provider: %s", "; ".join(ollama_issues)
+                )
+            else:
+                self.providers["ollama"] = OllamaProvider(
+                    settings.ollama_base_url,
+                    {
+                        "fast": settings.ollama_fast_model,
+                        "balanced": settings.ollama_balanced_model,
+                        "reasoning": settings.ollama_reasoning_model,
+                        "coding": settings.ollama_coding_model,
+                        "vision": settings.ollama_vision_model,
+                        "embedding": settings.ollama_fast_model,
+                    },
+                )
+
+        # Demo is constructed only when no valid real provider exists. With a
+        # real key it is not even present in the registry, so no route, model
+        # catalog or settings response can expose it.
+        if not self.has_real_provider:
+            self.providers["demo"] = DemoProvider()
 
     def get(self, provider_id: str) -> ChatProvider | None:
         return self.providers.get(provider_id)
@@ -182,9 +198,11 @@ class ModelRegistry:
     ) -> list[RouteDecision]:
         """Rank every viable provider/model pair for runtime fallback.
 
-        One model per provider is tried first, in priority order, so a broken
-        provider is skipped quickly. Extra tiers for the same provider follow
-        as deeper retries.
+        The default quality strategy follows the product model order:
+        Claude Sonnet -> GPT-4.1 -> Gemini via OpenRouter -> DeepSeek V4.1 ->
+        Groq. A custom ``PROVIDER_PRIORITY`` switches to provider-order routing
+        so operators can deliberately put another provider first. In both
+        cases every configured provider/model is included as a deeper fallback.
         """
         strategy = strategy or settings.routing_strategy
         if not self.has_real_provider:
@@ -199,44 +217,68 @@ class ModelRegistry:
         vision_available = any(
             self.providers[provider_id].capabilities.vision for provider_id in ordered
         )
-        primary: list[RouteDecision] = []
-        secondary: list[RouteDecision] = []
-        for provider_id in ordered:
-            provider = self.providers[provider_id]
-            if require_vision and vision_available and not provider.capabilities.vision:
-                continue
-            seen_models: set[str] = set()
-            provider_decisions: list[RouteDecision] = []
-            for candidate_tier in TIER_FALLBACKS.get(tier, ["balanced", "fast"]):
-                model = provider.model_for(candidate_tier)
-                if not model or model in seen_models:
-                    continue
-                seen_models.add(model)
-                reason = (
-                    f"{task_type} task → {provider.label}/{model} "
-                    f"({strategy} strategy)"
-                )
-                if candidate_tier != tier:
-                    reason += f"; {tier} unavailable, using {candidate_tier}"
-                if require_vision and not provider.capabilities.vision:
-                    reason += "; no vision model configured"
-                provider_decisions.append(
-                    RouteDecision(
-                        provider=provider,
-                        model=model,
-                        tier=candidate_tier,
-                        task_type=task_type,
-                        reason=reason,
-                        demo=provider.demo,
-                    )
-                )
-            if provider_decisions:
-                primary.append(provider_decisions[0])
-                secondary.extend(provider_decisions[1:])
+        require_vision = require_vision and vision_available
 
-        ranked = (primary + secondary)[:MAX_CANDIDATES]
-        if ranked:
-            return ranked
+        chain: list[tuple[str, str]] = []
+        if (
+            strategy == "quality"
+            and not preferred_provider
+            and settings.provider_priority_list[:4] == DEFAULT_PROVIDER_PRIORITY[:4]
+        ):
+            chain.extend(QUALITY_MODEL_CHAIN.get(tier, []))
+
+        # Deeper fallbacks: every provider's preferred tier first, then the
+        # remaining tiers. This guarantees that a configured provider is never
+        # ignored just because it is not in the quality chain.
+        primary: list[tuple[str, str]] = []
+        secondary: list[tuple[str, str]] = []
+        for provider_id in ordered:
+            fallback_tiers = TIER_FALLBACKS.get(tier, ["balanced", "fast"])
+            for index, candidate_tier in enumerate(fallback_tiers):
+                entry = (provider_id, candidate_tier)
+                if index == 0:
+                    primary.append(entry)
+                else:
+                    secondary.append(entry)
+        chain.extend(primary)
+        chain.extend(secondary)
+
+        decisions: list[RouteDecision] = []
+        seen: set[tuple[str, str]] = set()
+        for provider_id, candidate_tier in chain:
+            provider = self.providers.get(provider_id)
+            if provider is None or provider.demo:
+                continue
+            if require_vision and not provider.capabilities.vision:
+                continue
+            model = provider.model_for(candidate_tier)
+            if not model:
+                continue
+            key = (provider_id, model)
+            if key in seen:
+                continue
+            seen.add(key)
+            reason = (
+                f"{task_type} task → {provider.label}/{model} "
+                f"({strategy} strategy)"
+            )
+            if candidate_tier != tier:
+                reason += f"; {tier} tier fallback via {candidate_tier}"
+            decisions.append(
+                RouteDecision(
+                    provider=provider,
+                    model=model,
+                    tier=candidate_tier,
+                    task_type=task_type,
+                    reason=reason,
+                    demo=provider.demo,
+                )
+            )
+            if len(decisions) >= MAX_CANDIDATES:
+                break
+
+        if decisions:
+            return decisions
         return [self._demo_decision(task_type, tier)]
 
     def route(
@@ -257,12 +299,42 @@ class ModelRegistry:
         )[0]
 
     def _demo_decision(self, task_type: str, tier: str) -> RouteDecision:
+        # If a real provider is configured but no ranked candidate matched (for
+        # example a vision request with no vision model), use that provider's
+        # best available text model. Demo must never leak into a real deployment.
+        if self.has_real_provider:
+            for provider_id in self.order("quality"):
+                provider = self.providers.get(provider_id)
+                if provider is None or provider.demo:
+                    continue
+                model = (
+                    provider.model_for(tier)
+                    or provider.model_for("balanced")
+                    or provider.model_for("fast")
+                )
+                if model:
+                    return RouteDecision(
+                        provider=provider,
+                        model=model,
+                        tier=tier,
+                        task_type=task_type,
+                        reason=(
+                            f"{task_type} task → {provider.label}/{model} "
+                            "(last-resort real-provider fallback)"
+                        ),
+                        demo=False,
+                    )
+
+        provider = self.providers.get("demo")
+        if provider is None:
+            provider = DemoProvider()
+            self.providers["demo"] = provider
         if settings.demo_mode:
-            reason = "DEMO_MODE is enabled and no model provider is configured"
+            reason = "DEMO_MODE is enabled and no valid AI provider is configured"
         else:
-            reason = "No model provider configured; using the offline demo engine"
+            reason = "No valid AI provider is configured; using the offline local fallback"
         return RouteDecision(
-            provider=self.providers["demo"],
+            provider=provider,
             model="demo-local",
             tier=tier,
             task_type=task_type,
@@ -305,9 +377,9 @@ class ModelRegistry:
         ]
 
     def availability(self) -> dict[str, dict[str, Any]]:
+        # No unconditional demo entry: when a real provider is configured the
+        # demo provider is not registered at all, so it cannot appear here.
         provider_ids = list(self.order("quality"))
-        if "demo" in self.providers and "demo" not in provider_ids:
-            provider_ids.append("demo")
         result: dict[str, dict[str, Any]] = {}
         for provider_id in provider_ids:
             provider = self.providers.get(provider_id)
@@ -348,6 +420,41 @@ class ModelRegistry:
                     }
                 )
         return options
+
+    def startup_report(self) -> dict[str, Any]:
+        """Describe detected providers and the strongest model per tier.
+
+        The report never contains API keys. It is safe to log and to expose via
+        the health endpoint for deployment verification.
+        """
+        providers: dict[str, dict[str, Any]] = {}
+        for provider_id in self.order("quality"):
+            provider = self.providers.get(provider_id)
+            if provider is None or provider.demo:
+                continue
+            providers[provider_id] = {
+                "label": provider.label,
+                "base_url": getattr(provider, "base_url", None),
+                "models": {
+                    tier: model
+                    for tier, model in provider.models.items()
+                    if tier != "embedding"
+                },
+            }
+
+        selected: dict[str, str] = {}
+        if self.has_real_provider:
+            for tier in ("fast", "balanced", "reasoning", "coding", "vision"):
+                decision = self.route(task_type="general", tier=tier)
+                selected[tier] = f"{decision.provider_id}/{decision.model}"
+
+        return {
+            "demo_mode": not self.has_real_provider,
+            "priority": self.real_provider_ids,
+            "providers": providers,
+            "selected": selected,
+            "validation_issues": list(self.validation_issues),
+        }
 
     async def close(self) -> None:
         for provider in self.providers.values():

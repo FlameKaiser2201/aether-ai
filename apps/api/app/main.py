@@ -36,17 +36,38 @@ async def lifespan(_: FastAPI):
         async with SessionLocal() as db:
             await seed_demo_user(db)
             logger.warning("Demo account seeded for %s", settings.demo_email)
-    if settings.effective_demo_mode:
+    provider_report = registry.startup_report()
+    if provider_report["validation_issues"]:
         logger.warning(
-            "No AI provider configured. AETHER is running in offline demo mode. "
+            "Provider configuration issues: %s",
+            "; ".join(provider_report["validation_issues"]),
+        )
+    if not registry.has_real_provider:
+        logger.warning(
+            "No valid AI provider configured. AETHER is using the offline local fallback. "
             "Set OPENROUTER_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, "
             "GROQ_API_KEY, or OLLAMA_ENABLED=true."
         )
     else:
+        if settings.demo_mode:
+            logger.info(
+                "DEMO_MODE=true ignored because a valid AI provider is configured"
+            )
         logger.info(
             "AI provider priority: %s",
-            ", ".join(registry.real_provider_ids) or "demo",
+            ", ".join(provider_report["priority"]),
         )
+        for provider_id, provider_info in provider_report["providers"].items():
+            models = ", ".join(
+                f"{tier}={model}"
+                for tier, model in provider_info["models"].items()
+            )
+            logger.info(
+                "%s provider ready (%s): %s",
+                provider_info["label"],
+                provider_id,
+                models,
+            )
     try:
         yield
     finally:

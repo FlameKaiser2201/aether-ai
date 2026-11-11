@@ -21,6 +21,17 @@ async def health() -> dict:
     }
 
 
+@router.get("/providers")
+async def providers() -> dict:
+    """Report detected providers, selected models and validation issues.
+
+    The response contains provider IDs, labels, base URLs and model IDs only;
+    API keys are never included. Use it to verify a deployment after adding a
+    key.
+    """
+    return registry.startup_report()
+
+
 @router.get("/ready")
 async def ready(response: Response) -> dict:
     database = await check_database()
@@ -33,5 +44,6 @@ async def ready(response: Response) -> dict:
         "database": database,
         "redis": redis,
         "storage": storage.backend,
+        "demo_mode": not registry.has_real_provider,
         "providers": len([p for p in registry.providers.values() if not p.demo]),
     }

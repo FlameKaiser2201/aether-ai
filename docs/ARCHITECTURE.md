@@ -11,12 +11,12 @@ This document is the source of truth for the system design. It is intentionally 
 
 1. **Honest intelligence** — AETHER never pretends to perform an action it cannot perform. Capability guardrails detect impossible or unsafe requests and explain the limitation with a concrete alternative.
 2. **Voice-first, text-native** — every capability is available in text; voice is a low-friction layer on top of the same streaming chat pipeline.
-3. **Provider independence** — one `ChatProvider` contract supports OpenAI-compatible APIs (OpenRouter, OpenAI, DeepSeek, Groq, Together, Mistral, custom gateways), native Ollama, and an offline demo provider. Providers are tried in priority order with automatic cross-provider fallback.
+3. **Provider independence** — one `ChatProvider` contract supports OpenAI-compatible APIs (OpenRouter, OpenAI, DeepSeek, Groq, Together, Mistral, custom gateways), native Ollama, and a labelled local fallback. Configured providers are validated at startup and tried in model-priority order with automatic cross-provider fallback.
 4. **Routing, not a single model** — lightweight models handle simple turns, coding models handle code, reasoning models handle architecture/interview work.
-5. **Memory with provenance** — short-term context (rolling summary + recent turns) and long-term memory (facts, preferences, goals, projects) are separate, inspectable and deletable.
+5. **Memory with provenance** — short-term context (rolling summary + recent turns) and long-term memory (facts, preferences, goals, projects) are separate, inspectable and deletable. Retrieval uses the current turn, the rolling summary, and pinned identity/preference memories.
 6. **Secure by construction** — server-only secrets, JWT rotation, origin checks, rate limits, SSRF guards, upload validation, prompt-injection delimiting, strict CSP.
 7. **Production defaults** — async I/O end to end, stateless API, Postgres/Redis, Docker, migrations, health checks, CI, structured logs.
-8. **Zero-key demo mode** - the product remains explorable without paid provider keys; the UI clearly labels demo responses.
+8. **Local fallback only without a valid key** — the product remains explorable with no provider, but a valid key always wins. Placeholder or malformed provider configuration is skipped with a diagnostic; the fallback provider is not registered at all when a real provider is available.
 9. **Execution-first conversation** - the assistant performs the task and leads with the result; plans and visible step-by-step reasoning are opt-in.
 
 ---
@@ -47,7 +47,7 @@ flowchart LR
     subgraph AI["Provider layer"]
         OAI["OpenAI-compatible<br/>OpenAI · DeepSeek · Groq · OpenRouter · custom"]
         OLL["Ollama"]
-        DEMO["Offline demo"]
+        DEMO["Labelled local fallback"]
         WEB["Tavily · Brave · Serper · SearXNG · DuckDuckGo"]
     end
 
@@ -169,8 +169,8 @@ Continuous mode = VAD keeps listening after each turn; barge-in stops playback a
 
 ### 3.3 Research with citations
 
-1. Task classifier detects explicit web mode or research intent.
-2. Search provider returns 5–8 results.
+1. Task classifier detects explicit web mode, research intent, or a current-information signal (news, releases, prices, versions). Code-editing requests are excluded from automatic search.
+2. Search provider returns 5–8 results. With no dedicated search key, DuckDuckGo's HTML endpoint is the fallback.
 3. Top pages are fetched through the SSRF-safe fetcher (public IPs only, redirect re-validation, 2 MB cap).
 4. Main content is extracted, trimmed and wrapped in `<source>` delimiters marked **untrusted**.
 5. The model is instructed to cite claims as `[n]`; the API emits a `citations` event.
@@ -184,7 +184,7 @@ Upload → MIME/extension/magic validation → size cap (25 MB) → storage (Sup
 
 - **Short-term**: last 20 turns + rolling conversation summary, regenerated in the background when the transcript exceeds the context budget.
 - **Long-term**: categories `identity`, `preference`, `goal`, `project`, `skill`, `relationship`, `schedule`, `fact`. Extracted by the fast model as strict JSON after a turn (regex fallback), deduplicated by normalized key, confidence-scored, editable by the user.
-- **Retrieval**: lexical overlap + recency + confidence + category boost. Embeddings are used when the active provider supports them.
+- **Retrieval**: lexical overlap against the current turn plus the rolling summary, with recency, confidence and category boosts. High-confidence identity/preference memories are pinned for continuity. Embeddings are used when the active provider supports them.
 - **Preference memory**: explicit settings (response style, language, voice, routing strategy) are injected separately from inferred memories.
 
 ### 3.6 Code protocol
@@ -217,18 +217,25 @@ This is a deterministic guard around probabilistic generation — the system rep
 
 Provider preference is configurable per deployment:
 
-- `quality` (default): OpenRouter → OpenAI → DeepSeek → Groq → custom → Ollama
-- `cost`: DeepSeek → Groq → OpenAI → OpenRouter → custom → Ollama
-- `local`: Ollama → DeepSeek → Groq → OpenAI → OpenRouter → custom
+- `quality` (default): Claude Sonnet via OpenRouter → GPT-4.1 → Gemini via OpenRouter → DeepSeek V4.1 → Groq, then every other configured provider as a deeper fallback.
+- `cost`: DeepSeek → Groq → OpenAI → OpenRouter → custom → Ollama.
+- `local`: Ollama → DeepSeek → Groq → OpenAI → OpenRouter → custom.
 
-`PROVIDER_PRIORITY` overrides the quality order. The registry returns a ranked
-candidate list, and `app/ai/execution.py` walks it at runtime: a provider error,
-timeout, rate limit or empty completion moves to the next candidate. Streaming
-falls back only before the first text token; after that the partial answer is
-kept. Each provider exposes its own tier→model map, so routing is deterministic,
-observable (`meta` event) and testable. Explicit user mode (`mode: "coding"`)
-overrides classification. Demo is included only when no real provider exists,
-even if `DEMO_MODE=true`.
+`PROVIDER_PRIORITY` switches quality routing to explicit provider order. The
+registry returns a ranked candidate list, and `app/ai/execution.py` walks it at
+runtime: a provider error, timeout, rate limit or empty completion moves to the
+next candidate. Streaming falls back only before the first text token; after
+that the partial answer is kept. Each provider exposes its own tier→model map,
+so routing is deterministic, observable (`meta` event) and testable.
+
+Startup validation lives in `app/ai/provider_config.py`. It detects keys,
+rejects empty/placeholder keys, validates absolute base URLs and non-empty model
+IDs, and records every problem in the startup report. Invalid providers are
+skipped; valid ones are registered. The fallback provider is constructed only
+when no valid real provider exists, even if `DEMO_MODE=true`. The
+`/api/v1/health/providers` endpoint returns the detected providers, selected
+model per tier and validation issues, never key values. Explicit user mode
+(`mode: "coding"`) overrides classification.
 
 ---
 
@@ -287,7 +294,7 @@ aether/
 │   │   │   ├── models/                  SQLAlchemy models
 │   │   │   ├── schemas/                 Pydantic request/response contracts
 │   │   │   ├── api/                     versioned routers
-│   │   │   ├── ai/                      providers, router, prompts, context, guards
+│   │   │   ├── ai/                      providers, provider_config, router, prompts, context, guards
 │   │   │   ├── services/                chat, memory, files, search, voice, storage
 │   │   │   └── utils/                   text, security, JSON parsing
 │   │   ├── tests/                       unit + integration tests

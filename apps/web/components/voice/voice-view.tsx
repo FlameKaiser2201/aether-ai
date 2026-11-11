@@ -324,7 +324,7 @@ export function VoiceView() {
           conversation_id: conversationIdRef.current ?? undefined,
           mode: "voice",
           voice: true,
-          web_search: settings?.preferences.web_search_default ?? false,
+          web_search: settings?.preferences.web_search_default ? true : undefined,
         },
         {
           onMeta: (meta) => {

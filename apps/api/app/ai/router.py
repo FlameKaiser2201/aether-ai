@@ -30,8 +30,21 @@ INTERVIEW_RE = re.compile(
     r"recruit|google|amazon|microsoft|meta|flipkart|infosys|tcs|accenture|company-specific)"
 )
 RESEARCH_RE = re.compile(
-    r"(?i)(search|latest|today|news|current|2025|2026|sources?|cite|citation|research|"
-    r"look up|web|internet|compare prices|market|report on)"
+    r"(?i)(search the web|web search|look up|google|latest|today|news|current events|"
+    r"sources?|cite|citation|research|compare prices|market|report on)"
+)
+CURRENT_INFO_RE = re.compile(
+    r"(?i)(\b(latest|newest|today|tonight|this (?:week|month|year)|current(?:ly)?|right now|"
+    r"news|breaking|recent(?:ly)?|new release|just released|release date|"
+    r"pricing|price of|stock price|weather|forecast|who won|election|as of|"
+    r"2025|2026|AI developments?|model launch|new model|announcement|changelog|"
+    r"up[- ]to[- ]date|end of life|eol)\b|"
+    r"what(?:'s| is) new|what happened|recent developments|current events)"
+)
+CODE_EDIT_RE = re.compile(
+    r"(?i)\b(fix|debug|refactor|rewrite|update|change|edit|implement|write|review|"
+    r"explain|optimi[sz]e)\b[^.!?\n]{0,80}\b(code|function|class|file|script|"
+    r"program|app|bug|component|endpoint|query|test)\b"
 )
 GREETING_RE = re.compile(r"(?i)^(hi|hello|hey|yo|namaste|good (morning|afternoon|evening))[\s!.,]*$")
 SMALL_TALK_RE = re.compile(
@@ -48,6 +61,20 @@ class ClassificationInput:
     has_images: bool = False
     voice: bool = False
     web_search: bool | None = None
+
+
+def needs_web_search(message: str) -> bool:
+    """Return True when a request genuinely depends on current information.
+
+    Code-editing requests are excluded even if they contain words such as
+    "update" or "version", so "update this function" never triggers a search.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    if CODE_EDIT_RE.search(text):
+        return False
+    return bool(CURRENT_INFO_RE.search(text))
 
 
 def classify(data: ClassificationInput) -> TaskDecision:
@@ -77,7 +104,7 @@ def classify(data: ClassificationInput) -> TaskDecision:
         return TaskDecision("interview", "reasoning", "Interview preparation intent detected")
     if STUDY_RE.search(text):
         return TaskDecision("study", "balanced", "Study/learning intent detected")
-    if data.web_search is True or RESEARCH_RE.search(text):
+    if data.web_search is True or RESEARCH_RE.search(text) or needs_web_search(text):
         return TaskDecision("research", "balanced", "Research or current-information intent detected")
     if data.voice and len(text) < 600:
         return TaskDecision("voice", "fast", "Short voice turn")

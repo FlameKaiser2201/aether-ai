@@ -27,6 +27,18 @@ os.environ.update(
         "INTERNAL_API_SECRET": "test-internal-secret-0123456789abcdef012345",
         "TRUSTED_HOSTS": "testserver,localhost,127.0.0.1",
         "LOG_LEVEL": "WARNING",
+        # Keep provider detection deterministic even if the developer shell
+        # exports real keys. Tests that need a provider monkeypatch settings.
+        "PROVIDER_PRIORITY": "openrouter,openai,deepseek,groq,custom,ollama",
+        "OPENROUTER_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "DEEPSEEK_API_KEY": "",
+        "GROQ_API_KEY": "",
+        "CUSTOM_AI_API_KEY": "",
+        "CUSTOM_AI_BASE_URL": "",
+        "CUSTOM_AI_MODEL": "",
+        "OLLAMA_ENABLED": "false",
+        "WEB_SEARCH_AUTO": "true",
     }
 )
 

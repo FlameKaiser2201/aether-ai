@@ -9,6 +9,15 @@ def test_health_endpoints(client):
     ready = client.get("/api/v1/health/ready")
     assert ready.status_code == 200
     assert ready.json()["database"] is True
+    assert ready.json()["demo_mode"] is True
+
+    providers = client.get("/api/v1/health/providers")
+    assert providers.status_code == 200
+    report = providers.json()
+    assert report["demo_mode"] is True
+    assert report["providers"] == {}
+    assert report["priority"] == []
+    assert isinstance(report["validation_issues"], list)
 
 
 def test_auth_register_login_refresh_and_me(client):

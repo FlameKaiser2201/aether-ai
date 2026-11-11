@@ -113,14 +113,19 @@ def normalize_key(value: str) -> str:
 
 def format_memories(memories: list[object], max_chars: int = 3000) -> str:
     lines: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
     total = 0
     for memory in memories:
-        category = getattr(memory, "category", "fact")
-        key = getattr(memory, "key", "")
-        value = getattr(memory, "value", "")
+        category = str(getattr(memory, "category", "fact"))
+        key = str(getattr(memory, "key", ""))
+        value = str(getattr(memory, "value", ""))
+        signature = (category.lower(), key.lower(), value.lower())
+        if signature in seen:
+            continue
         line = f"- [{category}] {key}: {value}"
         if total + len(line) > max_chars:
             break
+        seen.add(signature)
         lines.append(line)
         total += len(line)
     return "\n".join(lines)
