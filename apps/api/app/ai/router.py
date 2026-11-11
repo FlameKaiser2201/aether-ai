@@ -41,6 +41,12 @@ CURRENT_INFO_RE = re.compile(
     r"up[- ]to[- ]date|end of life|eol)\b|"
     r"what(?:'s| is) new|what happened|recent developments|current events)"
 )
+WEB_INTENT_RE = re.compile(
+    r"(?i)(\bsearch (?:the )?(?:web|internet|online)\b|\bweb search\b|"
+    r"\blook (?:it |this |that )?up\b|\bbrowse (?:the )?(?:web|internet)\b|"
+    r"\bgoogle (?:this|that|it|for)\b|\bfind (?:me )?(?:some )?sources\b|"
+    r"\bwith (?:sources|citations)\b|\bcite (?:your )?sources\b)"
+)
 CODE_EDIT_RE = re.compile(
     r"(?i)\b(fix|debug|refactor|rewrite|update|change|edit|implement|write|review|"
     r"explain|optimi[sz]e)\b[^.!?\n]{0,80}\b(code|function|class|file|script|"
@@ -74,7 +80,7 @@ def needs_web_search(message: str) -> bool:
         return False
     if CODE_EDIT_RE.search(text):
         return False
-    return bool(CURRENT_INFO_RE.search(text))
+    return bool(CURRENT_INFO_RE.search(text) or WEB_INTENT_RE.search(text))
 
 
 def classify(data: ClassificationInput) -> TaskDecision:

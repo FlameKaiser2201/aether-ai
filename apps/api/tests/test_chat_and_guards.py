@@ -28,6 +28,8 @@ def test_current_information_detection():
     assert needs_web_search("What is the newest Python version?")
     assert needs_web_search("Who won the election?")
     assert needs_web_search("What is the current price of Bitcoin?")
+    assert needs_web_search("Search the web for the best budget laptops")
+    assert needs_web_search("look up the best time to visit Japan")
     assert not needs_web_search("Explain photosynthesis for my biology exam")
     assert not needs_web_search("Update this function to handle empty input")
     assert not needs_web_search("Write a research plan for my essay")
