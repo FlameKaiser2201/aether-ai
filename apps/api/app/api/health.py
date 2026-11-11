@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Response
 
 from app.ai.registry import registry
@@ -11,12 +13,23 @@ from app.services.storage import storage
 router = APIRouter(prefix="/health", tags=["health"])
 
 
+def _deployed_commit() -> str:
+    """Return the deployed git SHA when the host exposes one.
+
+    Render sets ``RENDER_GIT_COMMIT`` for Docker services. Exposing the short
+    SHA makes it possible to verify that a deploy actually replaced the running
+    container; it contains no secrets.
+    """
+    return (os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT") or "")[:12]
+
+
 @router.get("")
 async def health() -> dict:
     return {
         "status": "ok",
         "name": settings.app_name,
         "version": settings.app_version,
+        "commit": _deployed_commit(),
         "demo_mode": not registry.has_real_provider,
     }
 
@@ -44,6 +57,7 @@ async def ready(response: Response) -> dict:
         "database": database,
         "redis": redis,
         "storage": storage.backend,
+        "commit": _deployed_commit(),
         "demo_mode": not registry.has_real_provider,
         "providers": len([p for p in registry.providers.values() if not p.demo]),
     }
