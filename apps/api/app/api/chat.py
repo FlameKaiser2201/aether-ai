@@ -96,6 +96,7 @@ async def chat(payload: ChatRequest, user: CurrentUser, db: DbSession) -> ChatRe
             errors[0].get("code", "chat_failed"),
             errors[0].get("message", "Chat failed"),
             502,
+            details=errors[0].get("details"),
         )
     # A fallback emits a second meta event. The last one is the provider that
     # actually produced the answer.

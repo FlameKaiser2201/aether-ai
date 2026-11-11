@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.base import ProviderError
 from app.ai.capability_guard import check_request, limitation_markdown
 from app.ai.code_guard import (
     aggregate_ok,
@@ -37,12 +38,30 @@ from app.models import Conversation, File, Message, Task, User
 from app.schemas.chat import ChatRequest, PlanStep
 from app.services import auth_service, file_service, memory_service, search_service
 from app.services.usage_service import log_usage
+from app.utils.security import scrub_secrets
 from app.utils.text import estimate_tokens, format_memories, title_from_message
 
 logger = logging.getLogger("aether.chat")
 
 Event = tuple[str, dict]
 _background_tasks: set[asyncio.Task] = set()
+
+
+def _provider_error_details(exc: Exception) -> dict | None:
+    """Return a sanitized diagnostic payload for provider failures.
+
+    The live deployment has no log access from the client, so the API surfaces
+    the upstream provider, HTTP status and a scrubbed reason. Secrets and
+    bearer tokens are removed before the payload leaves the process.
+    """
+    if not isinstance(exc, ProviderError):
+        return None
+    return {
+        "provider": exc.provider,
+        "status_code": exc.status_code,
+        "retryable": exc.retryable,
+        "reason": scrub_secrets(exc.message)[:800],
+    }
 
 
 async def _get_or_create_conversation(
@@ -679,13 +698,17 @@ async def stream_chat(
             },
         )
     except AppError as exc:
-        yield ("error", {"code": exc.code, "message": exc.message})
-    except Exception:
+        yield (
+            "error",
+            {"code": exc.code, "message": exc.message, "details": exc.details},
+        )
+    except Exception as exc:
         logger.exception("Chat stream failed")
         yield (
             "error",
             {
                 "code": "chat_failed",
                 "message": "I couldn't complete that response. Please try again.",
+                "details": _provider_error_details(exc),
             },
         )
