@@ -90,6 +90,11 @@ QUALITY_MODEL_CHAIN: dict[str, list[tuple[str, str]]] = {
 
 MAX_CANDIDATES = 16
 
+# OpenRouter's free router costs nothing and is exempt from paid-credit
+# budgets. It is used only as the final fallback, so a key whose paid limit is
+# exhausted can still answer instead of failing the whole chat turn.
+OPENROUTER_FREE_MODEL = "openrouter/free"
+
 
 class ModelRegistry:
     def __init__(self) -> None:
@@ -276,6 +281,35 @@ class ModelRegistry:
             )
             if len(decisions) >= MAX_CANDIDATES:
                 break
+
+        # Last-resort free route. A per-key spend cap of $0 (or an exhausted
+        # balance) blocks every paid model, but OpenRouter's free router still
+        # works. Keeping it last preserves the paid model priority whenever
+        # credits are available.
+        if (
+            decisions
+            and not require_vision
+            and not preferred_provider
+            and strategy == "quality"
+            and "openrouter" in self.providers
+        ):
+            provider = self.providers["openrouter"]
+            key = ("openrouter", OPENROUTER_FREE_MODEL)
+            if key not in seen:
+                seen.add(key)
+                decisions.append(
+                    RouteDecision(
+                        provider=provider,
+                        model=OPENROUTER_FREE_MODEL,
+                        tier="fast",
+                        task_type=task_type,
+                        reason=(
+                            f"{task_type} task -> OpenRouter free router "
+                            "(paid-model fallback)"
+                        ),
+                        demo=False,
+                    )
+                )
 
         if decisions:
             return decisions

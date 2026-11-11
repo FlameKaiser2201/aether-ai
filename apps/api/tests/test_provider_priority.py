@@ -107,6 +107,13 @@ def test_quality_model_chain_matches_product_priority(configured):
     ]
 
 
+def test_openrouter_free_router_is_the_last_resort(configured):
+    candidates = configured.candidates(task_type="general", tier="balanced")
+    assert candidates[-1].provider_id == "openrouter"
+    assert candidates[-1].model == "openrouter/free"
+    assert candidates[-1].demo is False
+
+
 def test_demo_mode_is_ignored_when_a_real_key_exists(configured):
     decision = configured.route(task_type="general", tier="balanced")
     assert decision.provider_id == "openrouter"
