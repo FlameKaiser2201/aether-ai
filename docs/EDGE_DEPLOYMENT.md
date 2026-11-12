@@ -33,6 +33,10 @@ The web Worker calls the API Worker through a **service binding**, not a public
   → Groq, with automatic cross-provider fallback. OpenRouter's free router is the
   final fallback when the key has a $0 spending limit.
 - D1 read-your-writes consistency via `withSession("first-primary")`.
+- One-time legacy login migration. If an email is not in D1, the edge API asks
+  `LEGACY_API_URL` (the Render deployment) to verify the password, then creates a
+  D1 account with a PBKDF2 hash of the same password. Later logins stay entirely
+  on the edge. Conversations and memories are not imported by this step.
 
 ## What is not implemented on the edge yet
 

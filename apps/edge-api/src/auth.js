@@ -332,10 +332,98 @@ export async function registerUser(db, env, payload, meta) {
   return issueTokenPair(db, user, env, meta);
 }
 
+/**
+ * Existing AETHER accounts live in the Render/Supabase deployment, which uses
+ * Argon2id. Workers Free cannot verify Argon2 within its CPU budget, so on the
+ * first login for an unknown email we ask the legacy API to verify the
+ * credentials, then create a D1 account with a PBKDF2 hash of the same
+ * password. Later logins stay entirely on the edge.
+ */
+async function legacyLogin(env, email, password) {
+  if (!env.LEGACY_API_URL) return null;
+  try {
+    const response = await fetch(
+      `${String(env.LEGACY_API_URL).replace(/\/+$/, "")}/api/v1/auth/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: AbortSignal.timeout(55000),
+      },
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.user?.email ? data.user : null;
+  } catch {
+    return null;
+  }
+}
+
+async function migrateLegacyUser(db, env, legacy, password) {
+  const email = String(legacy.email).trim().toLowerCase();
+  const existing = await first(db, "SELECT * FROM users WHERE email = ?", email);
+  if (existing) return existing;
+
+  const now = nowIso();
+  const preferences = { ...defaultPreferences() };
+  if (legacy.preferences && typeof legacy.preferences === "object") {
+    for (const key of Object.keys(defaultPreferences())) {
+      if (legacy.preferences[key] !== undefined && legacy.preferences[key] !== null) {
+        preferences[key] = legacy.preferences[key];
+      }
+    }
+  }
+  const user = {
+    id: crypto.randomUUID(),
+    email,
+    password_hash: await hashPassword(password, env.PASSWORD_PEPPER),
+    name: String(legacy.name || email.split("@")[0]).slice(0, 80),
+    avatar_url: legacy.avatar_url ?? null,
+    auth_provider: "local",
+    email_verified: legacy.email_verified ? 1 : 0,
+    is_active: 1,
+    role: legacy.role === "admin" ? "admin" : "user",
+    preferences: JSON.stringify(preferences),
+    created_at: now,
+    updated_at: now,
+    last_login_at: null,
+  };
+  try {
+    await run(
+      db,
+      `INSERT INTO users
+        (id, email, password_hash, name, avatar_url, auth_provider, email_verified,
+         is_active, role, preferences, created_at, updated_at, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      user.id,
+      user.email,
+      user.password_hash,
+      user.name,
+      user.avatar_url,
+      user.auth_provider,
+      user.email_verified,
+      user.is_active,
+      user.role,
+      user.preferences,
+      user.created_at,
+      user.updated_at,
+      user.last_login_at,
+    );
+    return user;
+  } catch {
+    // A concurrent login may have migrated the account first.
+    return first(db, "SELECT * FROM users WHERE email = ?", email);
+  }
+}
+
 export async function loginUser(db, env, payload, meta) {
   const email = validateEmail(payload.email);
   const password = String(payload.password || "");
-  const user = await first(db, "SELECT * FROM users WHERE email = ?", email);
+  let user = await first(db, "SELECT * FROM users WHERE email = ?", email);
+  if (!user) {
+    const legacy = await legacyLogin(env, email, password);
+    if (legacy) user = await migrateLegacyUser(db, env, legacy, password);
+  }
   if (!user || !(await verifyPassword(password, user.password_hash, env.PASSWORD_PEPPER))) {
     throw new HttpError("invalid_credentials", "Email or password is incorrect", 401);
   }

@@ -22,6 +22,7 @@
     "CORS_ORIGINS": "https://aether-web.aether-ai-2201.workers.dev,http://localhost:3000",
     "ACCESS_TOKEN_MINUTES": "30",
     "REFRESH_TOKEN_DAYS": "30",
+    "LEGACY_API_URL": "https://aether-api-2201.onrender.com",
     "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     "OPENROUTER_FAST_MODEL": "google/gemini-3.8-flash",
     "OPENROUTER_BALANCED_MODEL": "anthropic/claude-sonnet-5.5",
