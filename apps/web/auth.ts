@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+import { backendFetch } from "@/lib/backend";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -24,7 +24,7 @@ interface BackendTokenPair {
 
 async function backendLogin(email: string, password: string): Promise<BackendTokenPair | null> {
   try {
-    const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+    const response = await backendFetch("/api/v1/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -92,7 +92,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const expiresAt = token.accessTokenExpiresAt as number | undefined;
       if (expiresAt && Date.now() > expiresAt - 30_000 && token.refreshToken) {
         try {
-          const response = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+          const response = await backendFetch("/api/v1/auth/refresh", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refresh_token: token.refreshToken }),

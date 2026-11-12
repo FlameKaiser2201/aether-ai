@@ -6,8 +6,15 @@ AETHER deploys on a **100% free** stack:
 | --- | --- | --- |
 | Frontend | **Cloudflare Workers** (Next.js 15 via OpenNext) | 100,000 requests/day, 10 ms CPU/request |
 | API | **Render Free** (FastAPI Docker container) | 750 instance hours/month, 512 MB RAM, 0.1 CPU, no card, sleeps after 15 min idle |
+| API (edge option) | **Cloudflare Workers + D1** (`apps/edge-api`) | 100,000 requests/day, 10 ms CPU/request, 5 GB D1 |
 | Database | **Supabase Free** PostgreSQL | 500 MB database, 5 GB egress |
 | File storage | **Supabase Free** Storage | 1 GB, private bucket |
+
+> **Fully on Cloudflare:** [`EDGE_DEPLOYMENT.md`](EDGE_DEPLOYMENT.md) covers the
+> Workers-native API in `apps/edge-api`. It keeps auth, chat, conversations,
+> settings, memories, tasks and search on the free plan using D1, with a service
+> binding from the web Worker. File, study/interview and server-voice mutations
+> are not ported yet; use the Render API if you need them.
 
 ```text
 Browser
@@ -45,6 +52,14 @@ Workers Free enforces **10 ms CPU per request**. Argon2id password hashing alone
 exceeds that on login/register, and FastAPI + Pydantic + SQLAlchemy requests
 regularly exceed it too. The API would fail with `Error 1102` (CPU limit).
 Cloudflare Containers and Workers Paid would work but are not free.
+
+A separate **Workers-native JavaScript API** is included in `apps/edge-api`. It
+uses PBKDF2 (25,000 iterations + a server pepper) and D1 instead of Argon2id and
+Postgres, and covers the core workspace: auth, chat/streaming, conversations,
+settings, memories, tasks and search. See
+[`EDGE_DEPLOYMENT.md`](EDGE_DEPLOYMENT.md) for the deployment steps and the
+feature limits. The FastAPI container remains the full-featured option for file
+uploads, study/interview generation and server-side voice.
 
 ### Northflank is not used
 
@@ -282,12 +297,25 @@ NEXTAUTH_URL=https://aether-web.<your-subdomain>.workers.dev
 not know the subdomain yet, deploy once with a placeholder, copy the printed
 URL, then update both secrets and redeploy.
 
+If you deploy the Workers-native edge API from `apps/edge-api`, the web Worker
+calls it through the `API` service binding declared in `apps/web/wrangler.jsonc`.
+The binding takes precedence over `API_URL`, which then only serves as a local
+fallback. See [`EDGE_DEPLOYMENT.md`](EDGE_DEPLOYMENT.md).
+
 ### 3.3 Build and deploy
 
 ```bash
 cd apps/web
 npm ci
 npm run deploy:cloudflare
+```
+
+On Windows, the OpenNext deploy wrapper can fail with `spawn UNKNOWN`. Bypass it
+and call Wrangler directly:
+
+```powershell
+$env:OPEN_NEXT_DEPLOY = "true"
+npx wrangler deploy
 ```
 
 The first deploy prints the Worker URL:

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+import { backendFetch } from "@/lib/backend";
 
 const schema = z.object({
   name: z.string().min(1).max(80),
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const response = await fetch(`${API_URL}/api/v1/auth/register`, {
+    const response = await backendFetch("/api/v1/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(parsed.data),

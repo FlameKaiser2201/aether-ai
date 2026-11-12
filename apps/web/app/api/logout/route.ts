@@ -2,7 +2,7 @@ import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+import { backendFetch } from "@/lib/backend";
 
 export async function POST(request: NextRequest) {
   const token = await getToken({
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   });
   if (token?.refreshToken) {
     try {
-      await fetch(`${API_URL}/api/v1/auth/logout`, {
+      await backendFetch("/api/v1/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: token.refreshToken }),

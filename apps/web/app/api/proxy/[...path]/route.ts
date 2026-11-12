@@ -2,7 +2,7 @@ import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8000";
+import { backendFetch } from "@/lib/backend";
 
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
@@ -40,7 +40,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
 
   const { path } = await context.params;
   const url = new URL(request.url);
-  const target = `${API_URL}/api/v1/${path.join("/")}${url.search}`;
+  const target = `/api/v1/${path.join("/")}${url.search}`;
 
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
@@ -56,7 +56,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
 
   let upstream: Response;
   try {
-    upstream = await fetch(target, {
+    upstream = await backendFetch(target, {
       method: request.method,
       headers,
       body,
