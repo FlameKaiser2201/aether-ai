@@ -199,6 +199,15 @@ export async function searchWeb(query, maxResults = 5) {
   const providers = [
     ["lite", () => duckDuckGoLite(cleanQuery, maxResults)],
     ["html", () => duckDuckGoHtml(cleanQuery, maxResults)],
+    [
+      "lite-retry",
+      async () => {
+        // A burst of requests can briefly trip DuckDuckGo's bot challenge.
+        // Wait out the challenge window and try the most reliable parser again.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return duckDuckGoLite(cleanQuery, maxResults);
+      },
+    ],
     ["instant", () => duckDuckGoInstant(cleanQuery, maxResults)],
     ["wikipedia", () => wikipedia(cleanQuery, maxResults)],
   ];
