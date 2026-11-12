@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aether-api-edge",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aether-edge",
+      "database_id": "e8e0d8db-70d6-4b91-b845-822ad7dbd78f",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_NAME": "AETHER API (Edge)",
+    "APP_VERSION": "1.0.0",
+    "ENVIRONMENT": "production",
+    "APP_URL": "https://aether-web.aether-ai-2201.workers.dev",
+    "CORS_ORIGINS": "https://aether-web.aether-ai-2201.workers.dev,http://localhost:3000",
+    "ACCESS_TOKEN_MINUTES": "30",
+    "REFRESH_TOKEN_DAYS": "30",
+    "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+    "OPENROUTER_FAST_MODEL": "google/gemini-3.8-flash",
+    "OPENROUTER_BALANCED_MODEL": "anthropic/claude-sonnet-5.5",
+    "OPENROUTER_REASONING_MODEL": "anthropic/claude-sonnet-5.5",
+    "OPENROUTER_CODING_MODEL": "anthropic/claude-sonnet-5.5",
+    "OPENROUTER_VISION_MODEL": "anthropic/claude-sonnet-5.5",
+    "OPENROUTER_FREE_MODEL": "openrouter/free",
+    "CONTEXT_TOKEN_BUDGET": "24000",
+    "MAX_OUTPUT_TOKENS": "4096",
+    "TEMPERATURE": "0.55"
+  }
+}
