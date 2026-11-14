@@ -41,6 +41,7 @@ import {
   withCors,
 } from "./http.js";
 import { searchWeb } from "./search.js";
+import { handleInterview, handleStudy } from "./studio.js";
 
 const VALID_MODES = new Set([
   "auto",
@@ -965,23 +966,17 @@ async function route(request, env, ctx) {
     return json({ items: [], total: 0 });
   }
 
-  // The studio UI reads these lists on mount. The edge deployment does not
-  // generate study sets or interview sessions yet, so return empty collections
-  // instead of a 404 that would surface as an error toast.
-  if (rest[0] === "study" && rest[1] === "sets" && method === "GET") {
-    await requireUser(request, env, db);
-    return json({ items: [], total: 0 });
+  if (rest[0] === "study") {
+    const response = await handleStudy(request, env, db, rest.slice(1), method);
+    if (response) return response;
   }
 
-  if (rest[0] === "interview" && rest[1] === "sessions" && method === "GET") {
-    await requireUser(request, env, db);
-    return json({ items: [], total: 0 });
+  if (rest[0] === "interview") {
+    const response = await handleInterview(request, env, db, rest.slice(1), method);
+    if (response) return response;
   }
 
-  if (
-    ["files", "code", "study", "interview", "voice"].includes(rest[0]) &&
-    method !== "GET"
-  ) {
+  if (["files", "code", "voice"].includes(rest[0]) && method !== "GET") {
     await requireUser(request, env, db);
     throw new HttpError(
       "not_implemented",

@@ -10,13 +10,14 @@ that must stay entirely on Cloudflare.
 - Chat: JSON and SSE streaming, provider fallback, web search.
 - Conversations: list, create, read, rename, pin, archive, delete, export.
 - Settings, memories, tasks, search, health and voice status.
+- Studio: study material (notes, summaries, questions, quizzes, flashcards,
+  revision plans) and scored mock interviews, persisted in D1.
 
 ## Not covered yet
 
-File upload/analysis, code actions, study/interview generation, server-side
-speech, Redis rate limiting, background memory extraction and automatic task
-planning. Those routes return `501`; the Python API remains the full-featured
-backend for them.
+File upload/analysis, code actions, server-side speech, Redis rate limiting,
+background memory extraction and automatic task planning. Those routes return
+`501`; the Python API remains the full-featured backend for them.
 
 ## Commands
 

@@ -44,14 +44,15 @@ These endpoints return `501` and are documented as edge limitations:
 
 - File upload, storage, analysis and deletion (`/files` mutations).
 - Code validation/explanation endpoints (`/code/*`).
-- Study set generation and interview session generation (`/study/*`,
-  `/interview/*` mutations). The studio list endpoints return empty collections
-  so the UI still loads.
 - Server-side speech-to-text and text-to-speech (`/voice/transcribe`,
   `/voice/synthesize`). The web UI uses the browser Web Speech API when
   available.
 - Redis-backed rate limiting, background memory extraction, and automatic task
   planning.
+
+Study material generation (`/study/generate`, `/study/sets`) and mock
+interviews (`/interview/sessions`) are implemented on the edge and persist to
+D1. They use the same provider failover chain as chat.
 
 The edge deployment starts with a fresh D1 database. Existing Supabase/Render
 accounts are **not migrated**; passwords use PBKDF2 here, while the Python API
